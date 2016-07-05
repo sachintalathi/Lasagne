@@ -1,3 +1,9 @@
+import sys
+if '/Users/sachintalathi/Work/Python/Virtualenvs/DL_Lasagne/lib/python2.7/site-packages' in sys.path:
+  del(sys.path[sys.path.index('/Users/sachintalathi/Work/Python/Virtualenvs/DL_Lasagne/lib/python2.7/site-packages')])
+sys.path.append('/usr/local/lib/python2.7/site-packages/')
+import matplotlib
+import pylab as py
 import theano
 import lasagne ## current quirk of my install because CUDA is not supported
 import lasagne
@@ -6,10 +12,9 @@ from lasagne.regularization import regularize_layer_params
 from lasagne.layers import batch_norm
 import theano.tensor as T
 import numpy as np
-import matplotlib as plt
 import pickle,gzip
 import optparse
-import sys
+
 
 #Nice way to read random set of mini-batch data
 #Define a Batch Generator Function
@@ -103,11 +108,12 @@ if __name__=="__main__":
   parser.add_option("--cool-factor",help="Cool Factor",dest="cool_factor",type=int,default=10)
   parser.add_option("--epochs",help="epochs",dest="epochs",type=int,default=10)
   parser.add_option("--learning-rate",help="learning rate",dest="learning_rate",type=float,default=0.1)
+  parser.add_option("--data-dir",help="Data Path",dest="data_dir",type=str,default='/Users/sachintalathi/Work/Python/Data')
   (opts,args)=parser.parse_args()
   np.random.seed(42)
   
   ####### Read data and Generate Data Batch Generator ############
-  train,val,test=pickle.load(gzip.open('mnist.pkl.gz'))
+  train,val,test=pickle.load(gzip.open('%s/mnist.pkl.gz'%opts.data_dir))
   X_train,y_train=train
   X_val,y_val=val
   X_test,y_test=test
