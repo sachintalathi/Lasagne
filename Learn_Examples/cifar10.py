@@ -174,7 +174,10 @@ if __name__=="__main__":
   parser.add_option("--epochs",help="epochs",dest="epochs",type=int,default=10)
   parser.add_option("--learning-rate",help="learning rate",dest="learning_rate",type=float,default=0.1)
   parser.add_option("--data-dir",help="Data Path",dest="data_dir",type=str,default='/Users/sachintalathi/Work/Python/Data')
+  parser.add_option("--save-dir",help="Data Path",dest="save_dir",type=str,default='')
+  parser.add_option("--memo",help="Data Path",dest="memo",type=str,default='Test')
   parser.add_option("--nonlinearity",help="Nonlinearity type",dest="nonlinearity",type=str,default='RELU')
+
   
   (opts,args)=parser.parse_args()
   np.random.seed(42)
@@ -261,3 +264,9 @@ if __name__=="__main__":
   cool_factor=opts.cool_factor,epochs=opts.epochs,data_augment_bool=opts.augment,data_dir=opts.data_dir)
   toc=time.clock()
   print(toc-tic)
+
+  ##Save Trained Model
+  if len(save_dir)!=0:
+    print 'Saving Trained Model'
+    save_file='%s/%s_Model.pkl'%(save_dir,memo)
+    pickle.dump(open(save_file,'wb'))
