@@ -1,7 +1,9 @@
 import sys
+## Some local adjustments to paths (not required for ubuntu machine)
 if '/Users/sachintalathi/Work/Python/Virtualenvs/DL_Lasagne/lib/python2.7/site-packages' in sys.path:
   del(sys.path[sys.path.index('/Users/sachintalathi/Work/Python/Virtualenvs/DL_Lasagne/lib/python2.7/site-packages')])
 sys.path.append('/usr/local/lib/python2.7/site-packages/')
+
 import matplotlib
 import pylab as py
 import theano
@@ -14,7 +16,7 @@ import numpy as np
 import pickle,gzip
 import optparse
 from lasagne.image import ImageDataGenerator
-
+import time
 def Get_Data_Stats(data_dir):
   ## Cifar-10 data is saved in 5 data batches.. 
   #this module will generate the mean and std. dev. stats over the entire training dataset
@@ -98,6 +100,7 @@ epochs=10,data_dir='/Users/sachintalathi/Work/Python/Data/cifar-10-batches-py',d
   
   Data_Mean,Data_Std=Get_Data_Stats(data_dir)
   
+  print('Running Epochs')
   for epoch in range(epochs):
     if cool_bool:
       if epoch>epoch_list[count] and epoch<=epoch_list[count]+1:
@@ -107,8 +110,9 @@ epochs=10,data_dir='/Users/sachintalathi/Work/Python/Data/cifar-10-batches-py',d
       
     train_loss=0
     train_acc=0
-    
     for ind in range(N_train_batches):
+      #print ('load Data Batch: %s/data_batch_%d'%(data_dir,ind+1))
+      tic=time.clock()
       D=pickle.load(open('%s/data_batch_%d'%(data_dir,ind+1)))
       data=D['data'].astype('float32')
       data=(data-Data_Mean)/Data_Std
@@ -128,7 +132,8 @@ epochs=10,data_dir='/Users/sachintalathi/Work/Python/Data/cifar-10-batches-py',d
         train_acc_per_batch+=acc
       train_loss_per_batch=train_loss_per_batch/N_mini_batches
       train_acc_per_batch=train_acc_per_batch/N_mini_batches
-      print ('Epoch %d Data_Batch %d Learning_Rate %0.04f Train Loss (Accuracy) %.03f (%.03f)'%(epoch,ind,plr(),train_loss_per_batch,train_acc_per_batch))
+      toc=time.clock()
+      print ('Epoch %d Data_Batch (Time) %d (%0.03f s) Learning_Rate %0.04f Train Loss (Accuracy) %.03f (%.03f)'%(epoch,ind,toc-tic,np.array(plr()),train_loss_per_batch,train_acc_per_batch))
       train_loss+=train_loss_per_batch
       train_acc+=train_acc_per_batch
     train_loss=train_loss/N_train_batches
@@ -153,7 +158,7 @@ epochs=10,data_dir='/Users/sachintalathi/Work/Python/Data/cifar-10-batches-py',d
     
     loss_ratio=val_loss/train_loss
     per_epoch_performance_stats.append([train_loss,val_loss,train_acc,val_acc])
-    print ('Epoch %d Learning_Rate %0.04f Train (Val) %.03f (%.03f) Accuracy'%(epoch,plr(),train_acc,val_acc))
+    print ('Epoch %d Learning_Rate %0.04f Train (Val) %.03f (%.03f) Accuracy'%(epoch,np.array(plr()),train_acc,val_acc))
   return per_epoch_performance_stats
   
   
@@ -251,6 +256,8 @@ if __name__=="__main__":
 
 
   #Begin Training
+  tic=time.clock()
   peps=batch_train(datagen,5,32,f_train,f_val,opts.cool,lr,\
-  cool_factor=opts.cool_factor,epochs=opts.epochs,data_augment_bool=opts.augment)
-
+  cool_factor=opts.cool_factor,epochs=opts.epochs,data_augment_bool=opts.augment,data_dir=opts.data_dir)
+  toc=time.clock()
+  print(toc-tic)
