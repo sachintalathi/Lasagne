@@ -109,6 +109,7 @@ if __name__ == "__main__":
     data_dir='/Users/sachintalathi/Work/Python/Data'
     trs,vrs,ts=pickle.load(gzip.open('%s/mnist.pkl.gz'%data_dir))
     
+###############Data for Hinge Loss Analysis#################
     # train_set=data_set(trs[0].reshape(-1, 1, 28, 28),np.hstack(trs[1]))
 #     valid_set=data_set(vrs[0].reshape(-1, 1, 28, 28),np.hstack(vrs[1]))
 #     test_set=data_set(ts[0].reshape(-1, 1, 28, 28),np.hstack(ts[1]))
@@ -117,24 +118,26 @@ if __name__ == "__main__":
 #     train_set.y = np.float32(np.eye(10)[train_set.y])
 #     valid_set.y = np.float32(np.eye(10)[valid_set.y])
 #     test_set.y = np.float32(np.eye(10)[test_set.y])
-#
-    train_set=data_set(trs[0].reshape(-1, 1, 28, 28),trs[1])
-    valid_set=data_set(vrs[0].reshape(-1, 1, 28, 28),vrs[1])
-    test_set=data_set(ts[0].reshape(-1, 1, 28, 28),ts[1])
-    # train_set.y = np.float32(np.eye(10)[train_set.y])
-#     valid_set.y = np.float32(np.eye(10)[valid_set.y])
-#     test_set.y = np.float32(np.eye(10)[test_set.y])
-#
+
 #     # for hinge loss
 #     train_set.y = 2* train_set.y - 1.
 #     valid_set.y = 2* valid_set.y - 1.
 #     test_set.y = 2* test_set.y - 1.
+  
+##########Data for Categorical entropy loss########
+    train_set=data_set(trs[0].reshape(-1, 1, 28, 28),trs[1])
+    valid_set=data_set(vrs[0].reshape(-1, 1, 28, 28),vrs[1])
+    test_set=data_set(ts[0].reshape(-1, 1, 28, 28),ts[1])
 
     print('Building the MLP...') 
     
     # Prepare Theano variables for inputs and targets
     input = T.tensor4('inputs')
+    
+    ## theano variable for hinge loss
     #target = T.matrix('targets')
+    
+    ## theano variable for categorical loss
     target=T.ivector('targets')
     
     LR = T.scalar('LR', dtype=theano.config.floatX)
@@ -206,11 +209,15 @@ if __name__ == "__main__":
         updates = lasagne.updates.adam(loss_or_grads=loss, params=params, learning_rate=LR)
 
     test_output = lasagne.layers.get_output(mlp, deterministic=True)
+    
+    #Test Categorical Loss
     test_loss=T.mean(lasagne.objectives.categorical_crossentropy(test_output,target))
-    #test_loss = T.mean(T.sqr(T.maximum(0.,1.-target*test_output)))
-    #acc=T.mean(T.eq(pred,y_sym))
-    #test_err = T.mean(T.neq(T.argmax(test_output,axis=1), T.argmax(target, axis=1)),dtype=theano.config.floatX)
     test_err = T.mean(T.neq(T.argmax(test_output,axis=1), target),dtype=theano.config.floatX)
+    
+    #Test Hinge Loss
+    #test_loss = T.mean(T.sqr(T.maximum(0.,1.-target*test_output)))
+    #test_err = T.mean(T.neq(T.argmax(test_output,axis=1), T.argmax(target, axis=1)),dtype=theano.config.floatX)
+    
     
     # Compile a function performing a training step on a mini-batch (by giving the updates dictionary) 
     # and returning the corresponding training loss:
