@@ -48,16 +48,14 @@ def batch_gen(X,y,N):
 
 ## Function to compute gradients wrt quantized network parameters
 def compute_grads(loss,network):
-        
     layers = lasagne.layers.get_all_layers(network)
     grads = []
-    
     for layer in layers:
     
         params = layer.get_params(binary=True)
         if params:
             print(params[0].name)
-            #assert(layer.Wb)
+            assert(layer.Wb)
             grads.append(theano.grad(loss, wrt=layer.Wb))
                 
     return grads
@@ -88,10 +86,9 @@ def simple_binary_cnn_network(input_var,batchnorm_bool=0, dropout_bool=0, node_t
     nonlinearity=lasagne.nonlinearities.elu
   
   net={}
-  net['l_in']=lasagne.layers.InputLayer((None,3,32,32))
-  #net[0]=bc.Conv2DLayer(net['l_in'],num_filters=16,filter_size=3,pad=1,nonlinearity=nonlinearity,binary=True,stochastic=True)
+  net['l_in']=lasagne.layers.InputLayer((None,3,32,32))  #net[0]=bc.Conv2DLayer(net['l_in'],num_filters=16,filter_size=3,pad=1,nonlinearity=nonlinearity,binary=True,stochastic=True)
   net[0]=lasagne.layers.qConv2DLayer(net['l_in'],num_filters=16,filter_size=3,pad=1,nonlinearity=nonlinearity,binary=True,stochastic=True)
-  net['l_out']=lasagne.layers.DenseLayer(net[0],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
+  net['l_out']=lasagne.layers.qDenseLayer(net[0],num_units=10,nonlinearity=lasagne.nonlinearities.softmax,binary=True,stochastic=True)
   return net
   
 
@@ -226,6 +223,7 @@ if __name__=="__main__":
   parser.add_option("--learning-rate",help="learning rate",dest="learning_rate",type=float,default=0.1)
   parser.add_option("--data-dir",help="Data Path",dest="data_dir",type=str,default='/Users/sachintalathi/Work/Python/Data')
   parser.add_option("--nonlinearity",help="Nonlinearity type",dest="nonlinearity",type=str,default='RELU')
+  parser.add_option("--binary",action="store_true",dest="binary",default=False,help="Invoke Binary Weight Training")
   
   (opts,args)=parser.parse_args()
   np.random.seed(42)
@@ -251,7 +249,7 @@ if __name__=="__main__":
 
   #Theano definition for output probability distribution and class prediction
   #Test for binary network
-  binary=True
+  binary=opts.binary
   
   if opts.simple_cnn:
     if binary:
@@ -294,20 +292,20 @@ if __name__=="__main__":
   lr = theano.shared(np.array(opts.learning_rate, dtype=theano.config.floatX))
   momentum = theano.shared(np.array(0.9, dtype=theano.config.floatX))
   
-  print('Stop here')
-  sys.exit(0)
   
   #Get params theano variables and gradients
   if binary:
-    paramsB = lasagne.layers.get_all_params(net['l_out'], binary=True)
+    W = lasagne.layers.get_all_params(net['l_out'], binary=True)
     gradB = compute_grads(loss,net['l_out'])
-    updates = lasagne.updates.sgd(gradB, paramsB, learning_rate=lr)
+    updates = lasagne.updates.sgd(loss_or_grads=gradB, params=W, learning_rate=lr)
+    #updates = lasagne.updates.sgd(gradB, paramsB, learning_rate=lr)
     #updates=lasagne.updates.apply_momentum(updates,momentum=momentum)
-    #updates = bc.clipping_scaling(updates,net['l_out'])
+    updates = bc.clipping_scaling(updates,net['l_out'])
 
     # other parameters updates
     params = lasagne.layers.get_all_params(net['l_out'], trainable=True, binary=False)
-    #updates = OrderedDict(updates.items() + lasagne.updates.adam(loss_or_grads=loss, params=params, learning_rate=lr).items())    
+    updates = OrderedDict(updates.items() + lasagne.updates.adam(loss_or_grads=loss, params=params, learning_rate=lr).items())    
+  
   else:
     params=lasagne.layers.get_all_params(net['l_out'],trainable=True)
     grad=T.grad(loss,params)
@@ -324,6 +322,7 @@ if __name__=="__main__":
   f_pred=theano.function([X_sym],pred,allow_input_downcast=True)
 
   pre_train_values=lasagne.layers.get_all_param_values(net['l_out'])
+    
   #Begin Training
   peps=batch_train(datagen,5,32,f_train,f_val,opts.cool,lr,\
   cool_factor=opts.cool_factor,epochs=opts.epochs,data_augment_bool=opts.augment)

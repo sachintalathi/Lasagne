@@ -64,7 +64,7 @@ if __name__ == "__main__":
     print("n_hidden_layers = "+str(n_hidden_layers))
     
     # Training parameters
-    num_epochs = 10
+    num_epochs = 1
     print("num_epochs = "+str(num_epochs))
     
     # Dropout parameters
@@ -188,6 +188,7 @@ if __name__ == "__main__":
     
     # squared hinge loss
     loss = T.mean(T.sqr(T.maximum(0.,1.-target*train_output)))
+    
     
     #cross entropy loss
     #loss=T.mean(lasagne.objectives.categorical_crossentropy(train_output,target))

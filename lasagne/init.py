@@ -5,8 +5,7 @@ Examples
 --------
 >>> from lasagne.layers import DenseLayer
 >>> from lasagne.init import Constant, GlorotUniform
->>> l1 = DenseLayer((100,20), num_units=50,
-...                 W=GlorotUniform('relu'), b=Constant(0.0))
+>>> l1 = DenseLayer((100,20), num_units=50,W=GlorotUniform('relu'), b=Constant(0.0))
 """
 
 import numpy as np
@@ -162,7 +161,6 @@ class Glorot(Initializer):
             if len(shape) != 4:
                 raise RuntimeError(
                     "If c01b is True, only shapes of length 4 are accepted")
-
             n1, n2 = shape[0], shape[3]
             receptive_field_size = shape[1] * shape[2]
         else:
@@ -172,7 +170,6 @@ class Glorot(Initializer):
 
             n1, n2 = shape[:2]
             receptive_field_size = np.prod(shape[2:])
-
         std = self.gain * np.sqrt(2.0 / ((n1 + n2) * receptive_field_size))
         return self.initializer(std=std).sample(shape)
 

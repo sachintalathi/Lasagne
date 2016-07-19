@@ -83,7 +83,7 @@ class DenseLayer(lasagne.layers.DenseLayer):
             num_inputs = int(np.prod(incoming.output_shape[1:]))
             self.W_LR_scale = np.float32(1./np.sqrt(1.5/ (num_inputs + num_units)))
 
-        self._srng = RandomStreams(lasagne.random.get_rng().randint(1, 2147462579))
+        self._srng = RandomStreams(lasagne.random.get_rng().randint(1, 2147462579)) ## setting the seed
         
         if self.binary:
             super(DenseLayer, self).__init__(incoming, num_units, W=lasagne.init.Uniform((-self.H,self.H)), **kwargs)
