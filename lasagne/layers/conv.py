@@ -1,12 +1,15 @@
 import theano.tensor as T
 
 from .. import init
+from .. import random
 from .. import nonlinearities
 from ..utils import as_tuple
 from ..theano_extensions import conv, padding
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from .base import Layer
 
+from .quantize import hard_sigmoid,binarization,Conv_H_Norm
 
 __all__ = [
     "Conv1DLayer",
@@ -14,6 +17,7 @@ __all__ = [
     "TransposedConv2DLayer",
     "Deconv2DLayer",
     "DilatedConv2DLayer",
+    "qConv2DLayer"
 ]
 
 
@@ -484,7 +488,6 @@ class Conv1DLayer(BaseConvLayer):
                                   filter_flip=self.flip_filters)
         return conved
 
-
 class Conv2DLayer(BaseConvLayer):
     """
     lasagne.layers.Conv2DLayer(incoming, num_filters, filter_size,
@@ -607,6 +610,67 @@ class Conv2DLayer(BaseConvLayer):
                                   border_mode=border_mode,
                                   filter_flip=self.flip_filters)
         return conved
+
+########### Try this out ############
+class qConv2DLayer(Conv2DLayer):
+    
+    def __init__(self, incoming, num_filters, filter_size,binary = True, stochastic = True, **kwargs):
+        
+        self.binary = binary
+        self.stochastic = stochastic
+        
+        ## Assume He Initialization
+        self.H,self.W_LR_scale=Conv_H_Norm(incoming,filter_size)
+        self._srng = RandomStreams(random.get_rng().randint(1, 2147462579))    
+            
+        if self.binary:
+            super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size, W=init.Uniform((-self.H,self.H)), **kwargs)   
+            self.params[self.W]=set(['binary'])
+        else:
+            super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size, **kwargs)    
+    
+    def convolve(self, input, deterministic=False, **kwargs):
+        
+        self.Wb = binarization(self.W,self.H,self.binary,deterministic,self.stochastic,self._srng)
+        Wr = self.W
+        self.W = self.Wb 
+        conved = super(qConv2DLayer, self).convolve(input, **kwargs)
+        
+        self.W = Wr
+        
+        return conved
+
+
+#####################################
+
+#
+# class qConv2DLayer(Conv2DLayer):
+#   def __init__(self, incoming, num_filters, filter_size, stride=(1, 1),pad=0, untie_biases=False,\
+#   W=init.GlorotUniform(), b=init.Constant(0.),nonlinearity=nonlinearities.rectify, flip_filters=True,\
+#   binary = True, stochastic = True,deterministic=False,convolution=T.nnet.conv2d, **kwargs):
+#       print(binary)
+#       self.convolution = convolution
+#       self.binary=binary
+#       self.stochastic=stochastic
+#       self.deterministic=deterministic
+#
+#       ## Assume He Initialization
+#       self.H,self.W_LR_scale=Conv_H_Norm(incoming,filter_size)
+#       self._srng = RandomStreams(random.get_rng().randint(1, 2147462579))
+#       super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size, W=init.Uniform((-self.H,self.H)), **kwargs)
+#       self.params[self.W]=set(['binary'])
+#
+#   def convolve(self, input, **kwargs):
+#       border_mode = 'half' if self.pad == 'same' else self.pad
+#       self.Wb = binarization(self.W,self.H,self.binary,self.deterministic,self.stochastic,self._srng)
+#       Wr = self.W
+#       self.W = self.Wb
+#       conved=super(qConv2DLayer, self).convolve(input, **kwargs)
+#       #conved = self.convolution(input, self.W,self.input_shape, self.get_W_shape(),\
+#       #subsample=self.stride,border_mode=border_mode,filter_flip=self.flip_filters)
+#       self.W=Wr
+#
+#       return conved
 
 # TODO: add Conv3DLayer
 
