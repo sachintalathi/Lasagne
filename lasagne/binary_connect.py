@@ -183,13 +183,7 @@ def clipping_scaling(updates,network):
         
 # Given a dataset and a model, this function trains the model on the dataset for several epochs
 # (There is no default train function in Lasagne yet)
-def train(train_fn,val_fn,
-            batch_size,
-            LR_start,LR_decay,
-            num_epochs,
-            X_train,y_train,
-            X_val,y_val,
-            X_test,y_test):
+def train(train_fn,val_fn,batch_size,LR_start,LR_decay,num_epochs,X_train,y_train,X_val,y_val,X_test,y_test):
     
     # A function which shuffles a dataset
     def shuffle(X,y):
@@ -210,16 +204,18 @@ def train(train_fn,val_fn,
     
     # This function trains the model a full epoch (on the whole dataset)
     def train_epoch(X,y,LR):
-        
+        err=0
         loss = 0
         batches = len(X)/batch_size
         
         for i in range(batches):
-            loss += train_fn(X[i*batch_size:(i+1)*batch_size],y[i*batch_size:(i+1)*batch_size],LR)
-        
+            new_loss,new_err = train_fn(X[i*batch_size:(i+1)*batch_size],y[i*batch_size:(i+1)*batch_size],LR)
+            loss+=new_loss
+            err+=new_err
         loss/=batches
+        err=err/batches *100
         
-        return loss
+        return err,loss
     
     # This function tests the model a full epoch (on the whole dataset)
     def val_epoch(X,y):
@@ -249,7 +245,7 @@ def train(train_fn,val_fn,
         
         start_time = time.time()
         
-        train_loss = train_epoch(X_train,y_train,LR)
+        train_err,train_loss = train_epoch(X_train,y_train,LR)
         X_train,y_train = shuffle(X_train,y_train)
         
         val_err, val_loss = val_epoch(X_val,y_val)
@@ -265,6 +261,7 @@ def train(train_fn,val_fn,
         epoch_duration = time.time() - start_time
         
         # Then we print the results for this epoch:
+        print ("Mods got captured")
         print("Epoch "+str(epoch + 1)+" of "+str(num_epochs)+" took "+str(epoch_duration)+"s")
         print("  LR:                            "+str(LR))
         print("  training loss:                 "+str(train_loss))

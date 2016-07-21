@@ -614,15 +614,32 @@ class Conv2DLayer(BaseConvLayer):
 ########### Try this out ############
 class qConv2DLayer(Conv2DLayer):
     
-    def __init__(self, incoming, num_filters, filter_size,binary = True, stochastic = True, **kwargs):
+    def __init__(self, incoming, num_filters, filter_size,binary = True, stochastic = True,H=1,W_LR_scale="Glorot",**kwargs):
         
         self.binary = binary
         self.stochastic = stochastic
         
-        ## Assume He Initialization
-        self.H,self.W_LR_scale=Conv_H_Norm(incoming,filter_size)
-        self._srng = RandomStreams(random.get_rng().randint(1, 2147462579))    
-            
+        if type(filter_size)=='int':
+            num_inputs = filter_size*filter_size*incoming.output_shape[1]
+        else:
+            num_inputs=np.prod(filter_size)*incoming.output_shape[1]
+        
+        num_units = int(np.prod(filter_size)*num_filters)
+        
+        if H=="Glorot":
+            self.H=np.float32(np.sqrt(1.5/ (num_inputs + num_units)))
+        elif H=="He":
+            self.H=np.float32(np.sqrt(2./num_inputs))
+        else:
+            self.H=np.float(1.0)
+        
+        if W_LR_scale=="Glorot":
+            self.W_LR_scale=np.float32(1./(np.sqrt(1.5/ (num_inputs + num_units))))
+        elif W_LR_scale=="He":
+            self.W_LR_scale=np.float32(1./(np.sqrt(2./num_inputs)))
+        else:
+            self.W_LR_scale=np.float32(1.)
+
         if self.binary:
             super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size, W=init.Uniform((-self.H,self.H)), **kwargs)   
             self.params[self.W]=set(['binary'])

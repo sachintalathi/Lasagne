@@ -8,7 +8,6 @@ from .. import nonlinearities
 from .base import Layer
 from .quantize import hard_sigmoid,binarization
 
-
 __all__ = [
     "DenseLayer",
     "NINLayer",
@@ -95,7 +94,7 @@ class DenseLayer(Layer):
 #######Try alternative way to define qDense Layer ########
 class qDenseLayer(DenseLayer):
     
-    def __init__(self, incoming, num_units,binary = True, stochastic = True, **kwargs):
+    def __init__(self, incoming, num_units,binary = True, stochastic = True,H=1,W_LR_scale="Glorot", **kwargs):
         
         self.binary=binary
         self.stochastic=stochastic
@@ -103,10 +102,25 @@ class qDenseLayer(DenseLayer):
         self.num_units = num_units
         num_inputs = int(np.prod(np.shape(incoming)[1:]))
         #num_inputs = int(np.prod(self.input_shape[1:]))
-        self.H=np.float32(np.sqrt(2./num_inputs))
-        self.W_LR_scale=np.float32(1./self.H)
-        self._srng = RandomStreams(random.get_rng().randint(1, 2147462579)) ## setting the seed
         
+        if H=="Glorot":
+            self.H=np.float32(np.sqrt(1.5/ (num_inputs + num_units)))
+        elif H=="He":
+            self.H=np.float32(np.sqrt(2./num_inputs))
+        else:
+            self.H=np.float32(1.0)
+        
+        if W_LR_scale=="Glorot":
+            self.W_LR_scale=np.float32(1./(np.sqrt(1.5/ (num_inputs + num_units))))
+        elif W_LR_scale=="He":
+            self.W_LR_scale=np.float32(1./(np.sqrt(2./num_inputs)))
+        else:
+            self.W_LR_scale=np.float32(1.)
+
+        #self.H=np.float32(1.)
+        #self.W_LR_scale=np.float32(1./np.sqrt(1.5/ (num_inputs + num_units)))
+        #self.W_LR_scale=np.float32(1./(np.sqrt(2./num_inputs)))
+        self._srng = RandomStreams(random.get_rng().randint(1, 2147462579)) ## setting the seed
         if self.binary:
             super(qDenseLayer, self).__init__(incoming, num_units, W=init.Uniform((-self.H,self.H)), **kwargs)
             # add the binary tag to weights            
