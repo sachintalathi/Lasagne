@@ -94,14 +94,13 @@ class DenseLayer(Layer):
 #######Try alternative way to define qDense Layer ########
 class qDenseLayer(DenseLayer):
     
-    def __init__(self, incoming, num_units,binary = True, stochastic = True,H=1,W_LR_scale="Glorot", **kwargs):
+    def __init__(self, incoming, num_units,stochastic = True,H=1,W_LR_scale="Glorot",quantization=None, **kwargs):
         
-        self.binary=binary
         self.stochastic=stochastic
+        self.quantization=quantization
         self._srng = RandomStreams(random.get_rng().randint(1, 2147462579))
         self.num_units = num_units
         num_inputs = int(np.prod(np.shape(incoming)[1:]))
-        #num_inputs = int(np.prod(self.input_shape[1:]))
         
         if H=="Glorot":
             self.H=np.float32(np.sqrt(1.5/ (num_inputs + num_units)))
@@ -117,20 +116,16 @@ class qDenseLayer(DenseLayer):
         else:
             self.W_LR_scale=np.float32(1.)
 
-        #self.H=np.float32(1.)
-        #self.W_LR_scale=np.float32(1./np.sqrt(1.5/ (num_inputs + num_units)))
-        #self.W_LR_scale=np.float32(1./(np.sqrt(2./num_inputs)))
         self._srng = RandomStreams(random.get_rng().randint(1, 2147462579)) ## setting the seed
-        if self.binary:
+        
+        if self.quantization:
             super(qDenseLayer, self).__init__(incoming, num_units, W=init.Uniform((-self.H,self.H)), **kwargs)
-            # add the binary tag to weights            
-            self.params[self.W]=set(['binary'])
-            
+            self.params[self.W]=set(['quantize'])
         else:
             super(qDenseLayer, self).__init__(incoming, num_units, **kwargs)
         
     def get_output_for(self, input, deterministic=False, **kwargs):
-        self.Wb = binarization(self.W,self.H,self.binary,deterministic,self.stochastic,self._srng)
+        self.Wb = binarization(self.W,self.H,deterministic,self.stochastic,self._srng,self.quantization)
         Wr = self.W
         self.W = self.Wb
         rvalue = super(qDenseLayer, self).get_output_for(input, **kwargs)
@@ -143,42 +138,6 @@ class qDenseLayer(DenseLayer):
 
 
 ###################################
-# class qDenseLayer(Layer):
-#   def __init__(self, incoming, num_units, W=init.GlorotUniform(),b=init.Constant(0.),\
-#    nonlinearity=nonlinearities.rectify,binary=True,stochastic=True,**kwargs):
-#       super(qDenseLayer, self).__init__(incoming,**kwargs)
-#
-#       self.nonlinearity = (nonlinearities.identity if nonlinearity is None else nonlinearity)
-#       self.binary=binary
-#       self.stochastic=stochastic
-#       self._srng = RandomStreams(random.get_rng().randint(1, 2147462579))
-#       self.num_units = num_units
-#       num_inputs = int(np.prod(np.shape(incoming)[1:]))
-#       #num_inputs = int(np.prod(self.input_shape[1:]))
-#       self.H=np.float32(np.sqrt(2./num_inputs))
-#       self.W_LR_scale=np.float32(1./self.H)
-#
-#       self.W = self.add_param(init.Uniform((-self.H,self.H)), (num_inputs, num_units), name="W")
-#       if b is None:
-#           self.b = None
-#       else:
-#           self.b = self.add_param(b, (num_units,), name="b",
-#                                   regularizable=False)
-#       self.params[self.W]=set(['binary'])
-#
-#
-#   def get_output_shape_for(self, input_shape):
-#       return (input_shape[0], self.num_units)
-#
-#   def get_output_for(self, input, **kwargs):
-#       self.Wb = binarization(self.W,self.H,self.binary,deterministic,self.stochastic,self._srng)
-#       Wr = self.W
-#       self.W = self.Wb
-#       rvalue = super(qDenseLayer, self).get_output_for(input, **kwargs)
-#       self.W = Wr
-#       return rvalue
-      
-
 class NINLayer(Layer):
     """
     lasagne.layers.NINLayer(incoming, num_units, untie_biases=False,

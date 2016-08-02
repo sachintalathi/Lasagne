@@ -38,7 +38,7 @@ def hard_sigmoid(x):
 def binarization(W,H,binary=True,deterministic=False,stochastic=False,srng=None):
     
     # (deterministic == True) <-> test-time <-> inference-time
-    if not binary or (deterministic and stochastic):
+    if not binary:
         # print("not binary")
         Wb = W
     
@@ -209,13 +209,11 @@ def train(train_fn,val_fn,batch_size,LR_start,LR_decay,num_epochs,X_train,y_trai
         batches = len(X)/batch_size
         
         for i in range(batches):
-            new_loss,new_err = train_fn(X[i*batch_size:(i+1)*batch_size],y[i*batch_size:(i+1)*batch_size],LR)
+            new_loss = train_fn(X[i*batch_size:(i+1)*batch_size],y[i*batch_size:(i+1)*batch_size],LR)
             loss+=new_loss
-            err+=new_err
         loss/=batches
-        err=err/batches *100
         
-        return err,loss
+        return loss
     
     # This function tests the model a full epoch (on the whole dataset)
     def val_epoch(X,y):
@@ -245,7 +243,7 @@ def train(train_fn,val_fn,batch_size,LR_start,LR_decay,num_epochs,X_train,y_trai
         
         start_time = time.time()
         
-        train_err,train_loss = train_epoch(X_train,y_train,LR)
+        train_loss = train_epoch(X_train,y_train,LR)
         X_train,y_train = shuffle(X_train,y_train)
         
         val_err, val_loss = val_epoch(X_val,y_val)

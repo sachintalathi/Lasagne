@@ -1,5 +1,5 @@
 import time
-
+import sys
 from collections import OrderedDict
 
 import numpy as np
@@ -13,37 +13,93 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from .helper import get_all_layers
 import time
 
+def prob_sigmoid(x):
+  return 0.5*(x/T.max(x)+1)
+
 def hard_sigmoid(x):
     return T.clip((x+1.)/2.,0,1)
 
 # The binarization function
-def binarization(W,H,binary=True,deterministic=False,stochastic=False,srng=None):
-    
-    # (deterministic == True) <-> test-time <-> inference-time
-    if not binary or (deterministic and stochastic):
-        # print("not binary")
+def binarization(W,H,deterministic=False,stochastic=False,srng=None,quantization=None):
+    if quantization==None:
+        print("no quantization")
         Wb = W
-    
-    else:
-        
-        # [-1,1] -> [0,1]
+    elif quantization.upper()=='BINARY':
         Wb = hard_sigmoid(W/H)
-        
-        # Stochastic BinaryConnect
-        if stochastic:
-        
-            # print("stoch")
+        if stochastic and not deterministic:
             Wb = T.cast(srng.binomial(n=1, p=Wb, size=T.shape(Wb)), theano.config.floatX)
-
-        # Deterministic BinaryConnect (round to nearest)
         else:
-            # print("det")
             Wb = T.round(Wb)
-        
-        # 0 or 1 -> -1 or 1
         Wb = T.cast(T.switch(Wb,H,-H), theano.config.floatX)
     
+    elif quantization.upper()=='ROUND':
+        Wb=T.round(W)
+    
+    elif quantization.upper()=='SCALE_ROUND':
+        alpha=T.max(W)
+        Wb=alpha*T.round(W/alpha)
+    
+    elif quantization.upper()=='SIGN':
+        alpha=T.max(W)
+        Wb=alpha*T.sgn(W)
+    
+    elif quantization.upper()=='POW':
+        alpha=T.max(W)
+        beta=np.array(2.0,dtype='float32')
+        Wb=alpha*(W/alpha)**beta*T.sgn(W)
+    
+    elif quantization.upper()=='STOCM':
+        gamma=np.array(.5,dtype='float32')
+        gamma_inv=np.array(1./gamma,dtype='float32')
+        stocW=T.max(W)*srng.uniform(low=gamma,high=gamma_inv,size=T.shape(W))
+        Wb = prob_sigmoid(W)
+        # # Stochastic BinaryConnect
+        if stochastic and not deterministic:
+            print("stoch")
+            Wb = T.cast(srng.binomial(n=1, p=Wb, size=T.shape(Wb)), theano.config.floatX)
+            Wb = stocW*T.cast(T.switch(Wb,1,-1), theano.config.floatX)    
+            #Wb=Wb*W
+        else:
+            print("det")
+            Wb =T.clip(W,-T.max(W),T.max(W))*srng.uniform(low=gamma,high=gamma_inv,size=T.shape(W))
+
+        
+        #print Wb.eval()
+    else:
+        print 'Error in specifying quantizatoin type'
+        print 'Allowed Values: {Round, Binary, None}'
+        sys.exit(0)
     return Wb
+
+# This functions clips the weights after the parameter update
+def clipping_scaling(updates,network,quantization):
+    
+    layers = get_all_layers(network)
+    updates = OrderedDict(updates)
+    
+    for layer in layers:
+    
+        params = layer.get_params(quantize=True)
+        for param in params:
+            assert layer.W_LR_scale
+            updates[param] = param + layer.W_LR_scale*(updates[param] - param) ## Learning rate scale factor
+            if quantization.upper()=='BINARY' or quantization.upper()=='ROUND':
+                print "Clip Range:[",-layer.H,layer.H,"]"
+                updates[param] = T.clip(updates[param], -layer.H,layer.H)     
+            if quantization.upper()=='SCALE_ROUND' or quantization.upper()=='SCALE_BINARY' or \
+            quantization.upper()=='SIGN' or quantization.upper()=='POW':
+                clip_val=T.max(layer.W)
+                print "Clip Range:[",-clip_val.eval(),",",clip_val.eval(),"]"
+                updates[param] = T.clip(updates[param], -clip_val,clip_val)
+            if quantization.upper()=='STOCM':
+                clip_val=T.max(layer.W)
+                gamma=np.array(2.,dtype='float32')
+                print "Clip Range:[",-clip_val.eval()/gamma,",",clip_val.eval()/gamma,"]"
+                #updates[param] = T.clip(updates[param], -layer.H,layer.H)
+                updates[param] = T.clip(updates[param], -clip_val,clip_val)
+
+    return updates
+
 
 def Conv_H_Norm(incoming,filter_size):
   if type(filter_size)=='int':
@@ -60,28 +116,13 @@ def compute_grads(loss,network):
     layers = get_all_layers(network)
     grads = []
     for layer in layers:
-        params = layer.get_params(binary=True)
+        params = layer.get_params(quantize=True)
         if params:
             assert(layer.Wb)
             grads.append(theano.grad(loss, wrt=layer.Wb))
                 
     return grads
 
-# This functions clips the weights after the parameter update
-def clipping_scaling(updates,network):
-    
-    layers = get_all_layers(network)
-    updates = OrderedDict(updates)
-    
-    for layer in layers:
-    
-        params = layer.get_params(binary=True)
-        for param in params:
-            assert layer.W_LR_scale
-            updates[param] = param + layer.W_LR_scale*(updates[param] - param) ## Learning rate scale factor
-            updates[param] = T.clip(updates[param], -layer.H,layer.H)     
-
-    return updates
 
 
 def train(train_fn,val_fn,N_Batches,N_generator,LR_start,LR_decay,num_epochs):

@@ -10,6 +10,7 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from .base import Layer
 
 from .quantize import hard_sigmoid,binarization,Conv_H_Norm
+import numpy as np
 
 __all__ = [
     "Conv1DLayer",
@@ -614,18 +615,17 @@ class Conv2DLayer(BaseConvLayer):
 ########### Try this out ############
 class qConv2DLayer(Conv2DLayer):
     
-    def __init__(self, incoming, num_filters, filter_size,binary = True, stochastic = True,H=1,W_LR_scale="Glorot",**kwargs):
+    def __init__(self, incoming, num_filters, filter_size, stochastic = True,H=1,W_LR_scale="Glorot",quantization=None,**kwargs):
         
-        self.binary = binary
         self.stochastic = stochastic
-        
+        self.quantization=quantization
+
         if type(filter_size)=='int':
             num_inputs = filter_size*filter_size*incoming.output_shape[1]
         else:
             num_inputs=np.prod(filter_size)*incoming.output_shape[1]
         
         num_units = int(np.prod(filter_size)*num_filters)
-        
         if H=="Glorot":
             self.H=np.float32(np.sqrt(1.5/ (num_inputs + num_units)))
         elif H=="He":
@@ -639,16 +639,17 @@ class qConv2DLayer(Conv2DLayer):
             self.W_LR_scale=np.float32(1./(np.sqrt(2./num_inputs)))
         else:
             self.W_LR_scale=np.float32(1.)
-
-        if self.binary:
-            super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size, W=init.Uniform((-self.H,self.H)), **kwargs)   
-            self.params[self.W]=set(['binary'])
+        self._srng = RandomStreams(random.get_rng().randint(1, 2147462579))
+        if self.quantization:
+            #super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size, W=init.Uniform((-self.H,self.H)), **kwargs)
+            super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size,W=init.Uniform((-self.H,self.H)), **kwargs)   
+            self.params[self.W]=set(['quantize'])
         else:
             super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size, **kwargs)    
     
     def convolve(self, input, deterministic=False, **kwargs):
         
-        self.Wb = binarization(self.W,self.H,self.binary,deterministic,self.stochastic,self._srng)
+        self.Wb = binarization(self.W,self.H,deterministic,self.stochastic,self._srng,self.quantization)
         Wr = self.W
         self.W = self.Wb 
         conved = super(qConv2DLayer, self).convolve(input, **kwargs)
@@ -656,38 +657,6 @@ class qConv2DLayer(Conv2DLayer):
         self.W = Wr
         
         return conved
-
-
-#####################################
-
-#
-# class qConv2DLayer(Conv2DLayer):
-#   def __init__(self, incoming, num_filters, filter_size, stride=(1, 1),pad=0, untie_biases=False,\
-#   W=init.GlorotUniform(), b=init.Constant(0.),nonlinearity=nonlinearities.rectify, flip_filters=True,\
-#   binary = True, stochastic = True,deterministic=False,convolution=T.nnet.conv2d, **kwargs):
-#       print(binary)
-#       self.convolution = convolution
-#       self.binary=binary
-#       self.stochastic=stochastic
-#       self.deterministic=deterministic
-#
-#       ## Assume He Initialization
-#       self.H,self.W_LR_scale=Conv_H_Norm(incoming,filter_size)
-#       self._srng = RandomStreams(random.get_rng().randint(1, 2147462579))
-#       super(qConv2DLayer, self).__init__(incoming, num_filters, filter_size, W=init.Uniform((-self.H,self.H)), **kwargs)
-#       self.params[self.W]=set(['binary'])
-#
-#   def convolve(self, input, **kwargs):
-#       border_mode = 'half' if self.pad == 'same' else self.pad
-#       self.Wb = binarization(self.W,self.H,self.binary,self.deterministic,self.stochastic,self._srng)
-#       Wr = self.W
-#       self.W = self.Wb
-#       conved=super(qConv2DLayer, self).convolve(input, **kwargs)
-#       #conved = self.convolution(input, self.W,self.input_shape, self.get_W_shape(),\
-#       #subsample=self.stride,border_mode=border_mode,filter_flip=self.flip_filters)
-#       self.W=Wr
-#
-#       return conved
 
 # TODO: add Conv3DLayer
 
