@@ -11,6 +11,7 @@ import theano
 import theano.tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from .helper import get_all_layers
+import pickle
 import time
 
 def prob_sigmoid(x):
@@ -169,3 +170,99 @@ def train(train_fn,val_fn,N_Batches,N_generator,LR_start,LR_decay,num_epochs):
         LR*=LR_decay
     return per_epoch_performance_stats
 
+
+
+def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,lr_decay,img_dim=(3,32,32),\
+    epochs=10,test_interval=1,data_dir='/Users/sachintalathi/Work/Python/Data/cifar-10-batches-py',data_augment_bool=False):
+    
+    def Get_Data_Stats(data_dir):
+        s=np.zeros((3072,))
+        sq=np.zeros((3072,))
+        for ind in range(5):
+            D=pickle.load(open('%s/data_batch_%d'%(data_dir,ind+1)))
+            data=D['data'].astype('float32')
+            s+=np.sum(data,axis=0)
+            sq+=np.sum(data*data,axis=0)
+
+        Mean=1.0*s/50000
+        Sq_Mean=1.0*sq/50000
+        Mean_Sq=Mean*Mean
+        Std=np.sqrt(Sq_Mean-Mean_Sq)
+        return Mean,Std
+    
+    def batch_gen(X,y,N):
+        while True:
+            idx=np.random.choice(len(y),N)
+            yield X[idx].astype('float32'),y[idx].astype('float32')
+
+    def train_on_batch(batch_index,data_dir,Data_Mean,Data_Std,data_augment_bool,img_dim,mini_batch_size,f_train,LR):
+        D=pickle.load(open('%s/data_batch_%d'%(data_dir,batch_index+1)))
+        assert 'data' in D.keys()
+        data=D['data'].astype('float32')
+        data=(data-Data_Mean)/Data_Std
+        data = data.reshape(data.shape[0], img_dim[0], img_dim[1], img_dim[2])
+        assert 'labels' in D.keys()
+        labels=np.array(D['labels'])
+        train_loss_per_batch=0
+        train_err_per_batch=0
+        if data_augment_bool:
+            train_batches=datagen.flow(data,labels,mini_batch_size) ### Generates data augmentation on the fly
+        else:
+            train_batches=batch_gen(data,labels,mini_batch_size) ### No data augmentation applied
+        N_mini_batches=len(labels)//mini_batch_size
+        
+        for mini_batch in range(N_mini_batches):
+            X,y=next(train_batches)
+            loss,err=f_train(X,y,LR)
+            train_loss_per_batch+=loss
+            train_err_per_batch+=err
+        train_loss_per_batch=train_loss_per_batch/N_mini_batches
+        train_err_per_batch=train_err_per_batch/N_mini_batches
+        return train_loss_per_batch,train_err_per_batch
+    
+    def val_on_batch(data_dir,img_dim,mini_batch_size,f_val):
+        val_loss=0
+        val_err=0    
+        D_val=pickle.load(open('%s/test_batch'%(data_dir)))
+        assert 'data' in D_val.keys()
+        data=D_val['data'].astype('float32')
+        data=(data-Data_Mean)/Data_Std
+        data=data.reshape(data.shape[0], img_dim[0], img_dim[1], img_dim[2])
+        assert 'labels' in D_val.keys()
+        labels=np.array(D_val['labels'])
+        val_batches=batch_gen(data,labels,mini_batch_size)
+        N_val_batches=len(labels)//mini_batch_size
+        for _ in range(N_val_batches):
+            X,y=next(val_batches)
+            loss,err=f_val(X,y)
+            val_loss+=loss
+            val_err+=err
+        val_loss=val_loss/N_val_batches
+        val_err=val_err/N_val_batches
+        return val_loss,val_err
+
+    per_epoch_train_stats=[];per_epoch_val_stats=[]
+    Data_Mean,Data_Std=Get_Data_Stats(data_dir)
+
+    print('Running Epochs')
+    LR=lr_start
+    for epoch in range(epochs):
+        train_loss=0
+        train_err=0
+        for ind in range(N_train_batches):
+            tic=time.clock()
+            tlpb,tapb=train_on_batch(ind,data_dir,Data_Mean,Data_Std,data_augment_bool,img_dim,mini_batch_size,f_train,LR)
+            toc=time.clock()
+            print ('Epoch %d Data_Batch (Time) %d (%0.03f s) Learning_Rate %0.04f Train Loss (Error)\
+                %.03f (%.03f)'%(epoch,ind,toc-tic,LR,tlpb,tapb))
+            train_loss+=tlpb
+            train_err+=tapb
+        train_loss=train_loss/N_train_batches
+        train_err=train_err/N_train_batches
+        per_epoch_train_stats.append([epoch,train_loss,train_err])
+        if test_interval%(epoch+1)==0:
+            val_loss,val_err=val_on_batch(data_dir,img_dim,mini_batch_size,f_val)
+            per_epoch_val_stats.append([epoch,val_loss,val_err])
+        LR*=lr_decay
+
+    return per_epoch_train_stats,per_epoch_val_stats

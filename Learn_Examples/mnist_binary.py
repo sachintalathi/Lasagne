@@ -13,9 +13,9 @@ import theano.tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import lasagne
 from lasagne.layers import batch_norm
+from lasagne.layers.quantize import compute_grads,clipping_scaling,train,binarization
 import cPickle as pickle
 import gzip
-from lasagne.layers.quantize import compute_grads,clipping_scaling,train,binarization
 from collections import OrderedDict
 import optparse
 py.ion()
@@ -161,7 +161,7 @@ if __name__ == "__main__":
     print ('Define Test Output Theano Function..')
     
     test_output = lasagne.layers.get_output(net['l_out'], deterministic=True)
-    test_loss=T.mean(lasagne.objectives.multiclass_hinge_loss(test_output,target))
+    test_loss=T.mean(lasagne.objectives.categorical_crossentropy(test_output,target))
     test_err = T.mean(T.neq(T.argmax(test_output,axis=1), target),dtype=theano.config.floatX)
  
     
