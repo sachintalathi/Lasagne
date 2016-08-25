@@ -248,6 +248,7 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
     print('Running Epochs')
     LR=lr_start
     for epoch in range(epochs):
+<<<<<<< HEAD
         if train_bool:
             train_loss=0
             train_err=0
@@ -262,8 +263,23 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
             train_loss=train_loss/N_train_batches
             train_err=train_err/N_train_batches
             per_epoch_train_stats.append([epoch,train_loss,train_err])
+=======
+        train_loss=0
+        train_err=0
+        for ind in range(N_train_batches):
+            tic=time.clock()
+            tlpb,tapb=train_on_batch(ind,data_dir,Data_Mean,Data_Std,data_augment_bool,img_dim,mini_batch_size,f_train,LR)
+            toc=time.clock()
+            print ('Epoch %d Data_Batch (Time) %d (%0.03f s) Learning_Rate %0.04f Train Loss (Error) %.03f (%.03f)'%(epoch,ind,toc-tic,LR,tlpb,tapb))
+            train_loss+=tlpb
+            train_err+=tapb
+        train_loss=train_loss/N_train_batches
+        train_err=train_err/N_train_batches
+        per_epoch_train_stats.append([epoch,train_loss,train_err])
+>>>>>>> 40812ff97237c37f9a45ecf96403ab142ba62671
         if (epoch+1)%test_interval==0:
             val_loss,val_err=val_on_batch(data_dir,img_dim,mini_batch_size,f_val)
+            print ('Epoch (Time) %d (%0.03f s) Learning_Rate %0.04f Val Loss (Error) %.03f (%.03f)'%(epoch,toc-tic,LR,val_loss,val_err))
             per_epoch_val_stats.append([epoch,val_loss,val_err])
             print ('Epoch  (Time) %d (%0.03f s) Learning_Rate %0.04f Test Loss (Error)\
                 %.03f (%.03f)'%(epoch,toc-tic,LR,val_loss,val_err))
