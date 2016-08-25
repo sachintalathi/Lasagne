@@ -1,4 +1,5 @@
-import sys
+import sys,os
+
 ## Some local adjustments to paths (not required for ubuntu machine)
 if '/Users/sachintalathi/Work/Python/Virtualenvs/DL_Lasagne/lib/python2.7/site-packages' in sys.path:
   del(sys.path[sys.path.index('/Users/sachintalathi/Work/Python/Virtualenvs/DL_Lasagne/lib/python2.7/site-packages')])
@@ -49,23 +50,25 @@ def cnn_network(input_var,node_type='ReLU',quantization=None,stochastic=False,H=
     
   net={}
   net['l_in']=lasagne.layers.InputLayer(shape=(None,3,32,32),input_var=input_var)
-  
+  net['l_d']=lasagne.layers.DropoutLayer(net['l_in'],p=.5)
   if quantization==None:
-    net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],256,3,pad=0,nonlinearity=nonlinearity))
+    net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_d'],256,3,pad=0,nonlinearity=nonlinearity))
     net[1]=batch_norm(lasagne.layers.Conv2DLayer(net[0],128,3,stride=(2,2),pad=1,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
     net[2]=batch_norm(lasagne.layers.Conv2DLayer(net[1],256,3,stride=(1,1),pad=0,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
     net[3]=batch_norm(lasagne.layers.Conv2DLayer(net[2],256,3,stride=(1,1),pad=0,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
     net[4]=batch_norm(lasagne.layers.Conv2DLayer(net[3],256,3,stride=(2,2),pad=1,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
     net[5]=batch_norm(lasagne.layers.Conv2DLayer(net[4],128,7,stride=(5,5),pad=2,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
-    net['l_out']=lasagne.layers.qDenseLayer(net[5],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
+    net['o_d']=lasagne.layers.DropoutLayer(net[5],p=.5)
+    net['l_out']=lasagne.layers.qDenseLayer(net['o_d'],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
   else:
-    net[0]=batch_norm(lasagne.layers.qConv2DLayer(net['l_in'],256,3,pad=0,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+    net[0]=batch_norm(lasagne.layers.qConv2DLayer(net['l_d'],256,3,pad=0,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
     net[1]=batch_norm(lasagne.layers.qConv2DLayer(net[0],128,3,stride=(2,2),pad=1,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
     net[2]=batch_norm(lasagne.layers.qConv2DLayer(net[1],256,3,stride=(1,1),pad=0,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
     net[3]=batch_norm(lasagne.layers.qConv2DLayer(net[2],256,3,stride=(1,1),pad=0,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
     net[4]=batch_norm(lasagne.layers.qConv2DLayer(net[3],256,3,stride=(2,2),pad=1,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
     net[5]=batch_norm(lasagne.layers.qConv2DLayer(net[4],128,7,stride=(5,5),pad=2,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
-    net['l_out']=lasagne.layers.qDenseLayer(net[5],num_units=10,nonlinearity=lasagne.nonlinearities.softmax,\
+    net['o_d']=lasagne.layers.DropoutLayer(net[5],p=.5)
+    net['l_out']=lasagne.layers.qDenseLayer(net['o_d'],num_units=10,nonlinearity=lasagne.nonlinearities.softmax,\
       H=H,stochastic=stochastic,quantization=quantization)
   
   return net
@@ -75,6 +78,7 @@ if __name__=="__main__":
   parser.add_option("-S", "--simple-cnn",action="store_true",dest="simple_cnn",default=False,help="Use Simple CNN Network")
   parser.add_option("-C", "--cnn",action="store_true",dest="cnn",default=False,help="Use CNN Network")
   parser.add_option("-A", "--augment",action="store_true",dest="augment",default=False,help="Augment Training Data")
+  parser.add_option("--train",action="store_true",dest="train",default=False,help="Train the Network")
   parser.add_option("--stochastic",action="store_true",dest="stochastic",default=False,help="Stochastic Training")
   parser.add_option("--batch-size",help="Batch Size",dest="batch_size",type=int,default=64)
   parser.add_option("-c","--cool",action="store_true",dest="cool",default=False,help="Cool Learning Rate")
@@ -83,11 +87,14 @@ if __name__=="__main__":
   parser.add_option("--data-dir",help="Data Path",dest="data_dir",type=str,default='/Users/sachintalathi/Work/Python/Data')
   parser.add_option("--nonlinearity",help="Nonlinearity type",dest="nonlinearity",type=str,default='RELU')
   parser.add_option("--quantization",help="Quantizatoin Type",dest="quantization",type=str,default=None)
+  parser.add_option("--save-dir",help="Save Directory",dest="save_dir",type=str,default='/prj/neo_lv/user/stalathi/Lasagne_Models')
+  parser.add_option("--model-file",help="Trained Model Pickle File",dest="model_file",type=str,default='')
+  parser.add_option("--memo",help="Memo",dest="memo",type=str,default=None)
 
   (opts,args)=parser.parse_args()
   np.random.seed(42)
   
-
+  #bsub -Ip -q QcDev -P Neo -a neogpu -app 1gpuEP -R nvTitanX run_lasagnetest.sh > /prj/neo_lv/user/stalathi/Lasagne_Models/LogFiles/Log_Cifar10_NoQuantize.log 2
   LR_start = opts.learning_rate
   if opts.cool:
     LR_fin = 0.000003
@@ -124,12 +131,29 @@ if __name__=="__main__":
   else:
     print ('No Network Defined')
     sys.exit(0)
-          
+  
+  if len(opts.model_file)!=0:
+    if os.path.isfile(opts.model_file):
+      [pt,pv,values]=pickle.load(open(opts.model_file))
+      lasagne.layers.set_all_param_values(net['l_out'],values)
+    else:
+      print('Trained model does not exist')
+      sys.exit(0)
       
   train_output=lasagne.layers.get_output(net['l_out'],input,deterministic=False)
   train_pred=train_output.argmax(-1)
   loss=T.mean(lasagne.objectives.categorical_crossentropy(train_output,target))
   err=T.mean(T.neq(T.argmax(train_output,axis=1), target),dtype=theano.config.floatX)
+
+  ## Add L2 Regularization 
+  if opts.quantization==None:
+    print 'loading pre-trained model'
+    layers={}
+    for k in net.keys():
+      layers[net[k]]=0.0005
+    l2_penalty = regularize_layer_params_weighted(layers, l2)  
+    ## Total loss
+    loss=loss+l2_penalty
 
   if opts.quantization==None:
         params = lasagne.layers.get_all_params(net['l_out'], trainable=True)
@@ -157,7 +181,17 @@ if __name__=="__main__":
   #Begin Training
   print 'begin training'
   tic=time.clock()
-  pt,pv=batch_train(datagen,5,32,f_train,f_val,LR_start,LR_decay,(3,32,32),\
-    epochs=opts.epochs,test_interval=1,data_augment_bool=opts.augment,data_dir=opts.data_dir)
+  pt,pv=batch_train(datagen,5,32,f_train,f_val,LR_start,LR_decay,(3,32,32),epochs=opts.epochs,\
+    test_interval=1,data_augment_bool=opts.augment,data_dir=opts.data_dir,train_bool=opts.train)
+  if opts.train:
+    values=lasagne.layers.get_all_param_values(net['l_out'])
   toc=time.clock()
+  
   print(toc-tic)
+
+  ## Save Results
+  if opts.save_dir!=None and opts.memo!=None:
+    save_file='%s/Model_%s.pkl'%(opts.save_dir,opts.memo)
+    o=open(save_file,'wb')
+    pickle.dump([pt,pv,values],o)
+    o.close()

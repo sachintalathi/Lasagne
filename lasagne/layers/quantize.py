@@ -173,7 +173,8 @@ def train(train_fn,val_fn,N_Batches,N_generator,LR_start,LR_decay,num_epochs):
 
 
 def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,lr_decay,img_dim=(3,32,32),\
-    epochs=10,test_interval=1,data_dir='/Users/sachintalathi/Work/Python/Data/cifar-10-batches-py',data_augment_bool=False):
+    epochs=10,test_interval=1,data_dir='/Users/sachintalathi/Work/Python/Data/cifar-10-batches-py',\
+    data_augment_bool=False,train_bool=True):
     
     def Get_Data_Stats(data_dir):
         s=np.zeros((3072,))
@@ -247,22 +248,25 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
     print('Running Epochs')
     LR=lr_start
     for epoch in range(epochs):
-        train_loss=0
-        train_err=0
-        for ind in range(N_train_batches):
-            tic=time.clock()
-            tlpb,tapb=train_on_batch(ind,data_dir,Data_Mean,Data_Std,data_augment_bool,img_dim,mini_batch_size,f_train,LR)
-            toc=time.clock()
-            print ('Epoch %d Data_Batch (Time) %d (%0.03f s) Learning_Rate %0.04f Train Loss (Error)\
-                %.03f (%.03f)'%(epoch,ind,toc-tic,LR,tlpb,tapb))
-            train_loss+=tlpb
-            train_err+=tapb
-        train_loss=train_loss/N_train_batches
-        train_err=train_err/N_train_batches
-        per_epoch_train_stats.append([epoch,train_loss,train_err])
-        if test_interval%(epoch+1)==0:
+        if train_bool:
+            train_loss=0
+            train_err=0
+            for ind in range(N_train_batches):
+                tic=time.clock()
+                tlpb,tapb=train_on_batch(ind,data_dir,Data_Mean,Data_Std,data_augment_bool,img_dim,mini_batch_size,f_train,LR)
+                toc=time.clock()
+                print ('Epoch %d Data_Batch (Time) %d (%0.03f s) Learning_Rate %0.04f Train Loss (Error)\
+                    %.03f (%.03f)'%(epoch,ind,toc-tic,LR,tlpb,tapb))
+                train_loss+=tlpb
+                train_err+=tapb
+            train_loss=train_loss/N_train_batches
+            train_err=train_err/N_train_batches
+            per_epoch_train_stats.append([epoch,train_loss,train_err])
+        if (epoch+1)%test_interval==0:
             val_loss,val_err=val_on_batch(data_dir,img_dim,mini_batch_size,f_val)
             per_epoch_val_stats.append([epoch,val_loss,val_err])
+            print ('Epoch  (Time) %d (%0.03f s) Learning_Rate %0.04f Test Loss (Error)\
+                %.03f (%.03f)'%(epoch,toc-tic,LR,val_loss,val_err))
         LR*=lr_decay
 
     return per_epoch_train_stats,per_epoch_val_stats
