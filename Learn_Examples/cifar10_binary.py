@@ -9,14 +9,8 @@ sys.path.append('/usr/local/lib/python2.7/site-packages/')
 
 import pylab as py
 import theano
-import lasagne
 import theano.tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-from lasagne.regularization import regularize_layer_params_weighted, l2, l1
-from lasagne.regularization import regularize_layer_params
-from lasagne.layers.quantize import compute_grads,clipping_scaling,train,binarization,batch_train
-from lasagne.layers import batch_norm
-from lasagne.image import ImageDataGenerator
 import theano.tensor as T
 import numpy as np
 import pickle,gzip
@@ -28,19 +22,19 @@ def keras_cnn_network(input_var):
     nonlinearity=lasagne.nonlinearities.rectify
     net={}
     net['l_in']=lasagne.layers.InputLayer((None,3,32,32),input_var=input_var)
-    net[0]=lasagne.layers.Conv2DLayer(net['l_in'],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity)
+    net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
     
-    net[1]=lasagne.layers.Conv2DLayer(net[0],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity)
+    net[1]=batch_norm(lasagne.layers.Conv2DLayer(net[0],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
     net[2]=lasagne.layers.MaxPool2DLayer(net[1],2)
     net[3]=lasagne.layers.DropoutLayer(net[2],p=.25)
     
-    net[4]=lasagne.layers.Conv2DLayer(net[3],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity)
+    net[4]=batch_norm(lasagne.layers.Conv2DLayer(net[3],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
     
-    net[5]=lasagne.layers.Conv2DLayer(net[4],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity)
+    net[5]=batch_norm(lasagne.layers.Conv2DLayer(net[4],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
     net[6]=lasagne.layers.MaxPool2DLayer(net[5],2)
     net[7]=lasagne.layers.DropoutLayer(net[6],p=.25)
    
-    net[8]=lasagne.layers.DenseLayer(net[7],num_units=512,nonlinearity=lasagne.nonlinearities.rectify)
+    net[8]=batch_norm(lasagne.layers.DenseLayer(net[7],num_units=512,nonlinearity=lasagne.nonlinearities.rectify))
     net[9]=lasagne.layers.DropoutLayer(net[8],p=.5)
     
     net['l_out']=lasagne.layers.DenseLayer(net[9],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
@@ -104,6 +98,7 @@ if __name__=="__main__":
   parser.add_option("-S", "--simple-cnn",action="store_true",dest="simple_cnn",default=False,help="Use Simple CNN Network")
   parser.add_option("-C", "--cnn",action="store_true",dest="cnn",default=False,help="Use CNN Network")
   parser.add_option("-A", "--augment",action="store_true",dest="augment",default=False,help="Augment Training Data")
+  parser.add_option("-K", "--kcnn",action="store_true",dest="kcnn",default=False,help="Use Keras CNN Network")
   parser.add_option("--train",action="store_true",dest="train",default=False,help="Train the Network")
   parser.add_option("--stochastic",action="store_true",dest="stochastic",default=False,help="Stochastic Training")
   parser.add_option("--batch-size",help="Batch Size",dest="batch_size",type=int,default=64)
@@ -114,13 +109,27 @@ if __name__=="__main__":
   parser.add_option("--nonlinearity",help="Nonlinearity type",dest="nonlinearity",type=str,default='RELU')
   parser.add_option("--quantization",help="Quantizatoin Type",dest="quantization",type=str,default=None)
   parser.add_option("--save-dir",help="Save Directory",dest="save_dir",type=str,default='/prj/neo_lv/user/stalathi/Lasagne_Models')
+  parser.add_option("--home-dir",help="Home Directory",dest="home_dir",type=str,default='')
   parser.add_option("--model-file",help="Trained Model Pickle File",dest="model_file",type=str,default='')
   parser.add_option("--memo",help="Memo",dest="memo",type=str,default=None)
 
   (opts,args)=parser.parse_args()
   np.random.seed(42)
   
-  #bsub -Ip -q QcDev -P Neo -a neogpu -app 1gpuEP -R nvTitanX run_lasagnetest.sh > /prj/neo_lv/user/stalathi/Lasagne_Models/LogFiles/Log_Cifar10_NoQuantize.log 2
+  if os.path.isdir(opts.home_dir):
+      sys.path.append(opts.home_dir)
+  else:
+      print '%s Directory does not exit'%opts.home_dir
+      sys.exit(0)
+  
+  import lasagne
+  from lasagne.regularization import regularize_layer_params_weighted, l2, l1
+  from lasagne.regularization import regularize_layer_params
+  from lasagne.layers.quantize import compute_grads,clipping_scaling,train,binarization,batch_train
+  from lasagne.layers import batch_norm
+  from lasagne.image import ImageDataGenerator
+
+#bsub -Ip -q QcDev -P Neo -a neogpu -app 1gpuEP -R nvTitanX run_lasagnetest.sh > /prj/neo_lv/user/stalathi/Lasagne_Models/LogFiles/Log_Cifar10_NoQuantize.log 2
   LR_start = opts.learning_rate
   if opts.cool:
     LR_fin = 0.000003
@@ -137,11 +146,11 @@ if __name__=="__main__":
           featurewise_std_normalization=False,  # divide inputs by std of the dataset
           samplewise_std_normalization=False,  # divide each input by its std
           zca_whitening=False,  # apply ZCA whitening
-          rotation_range=20,  # randomly rotate images in the range (degrees, 0 to 180)
+          rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
           width_shift_range=0.1,  # randomly shift images horizontally (fraction of total width)
           height_shift_range=0.1,  # randomly shift images vertically (fraction of total height)
           horizontal_flip=True,  # randomly flip images
-          vertical_flip=True)  # randomly flip images
+          vertical_flip=False)  # randomly flip images
   
   ######## Define theano variables and theano functions for training/validation and testing#############
   input=T.tensor4()
@@ -175,7 +184,6 @@ if __name__=="__main__":
 
   ## Add L2 Regularization 
   if opts.quantization==None:
-    print 'loading pre-trained model'
     layers={}
     for k in net.keys():
       layers[net[k]]=0.0005
