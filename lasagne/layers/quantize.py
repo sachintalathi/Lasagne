@@ -14,17 +14,48 @@ from .helper import get_all_layers
 import pickle
 import time
 
+QUANTIZATION_STEP = [1.596, 0.996, 0.586, 0.335, 0.188, 0.104, 0.057, 0.031, 0.0168, 0.00914, 0.00496, 0.00270, 0.00146, 0.00079, 0.00043, 0.00023, \
+                     0, 0, 0, 0, 0, 0, 0, 1.77e-6, 0, 0, 0, 0, 0, 0, 0, 1.34e-8]
+STEP_ADJ_FACTOR=3.
+
 def prob_sigmoid(x):
   return 0.5*(x/T.max(x)+1)
 
 def hard_sigmoid(x):
     return T.clip((x+1.)/2.,0,1)
 
+def quantize(value, step_size, num_bits):
+    quant_input = value / (step_size)
+    quant_input = np.round(quant_input)
+    quant_input = np.clip(quant_input, -2**(num_bits-1), 2**(num_bits-1)-1)
+#         print np.max(quant_input), np.min(quant_input)
+    quant_input = quant_input * (step_size)
+    return quant_input
+
 # The binarization function
 def binarization(W,H,deterministic=False,stochastic=False,srng=None,quantization=None):
     if quantization==None:
         print("no quantization")
         Wb = W
+    
+    elif quantization.upper()=='8BITS':
+        num_bits=int(8)
+        W_std=T.std(W)
+        W_mean=T.mean(W)
+        step_size= QUANTIZATION_STEP[num_bits-1] * (W_mean+W_std) * STEP_ADJ_FACTOR
+        num_frac_bits = np.ceil(-np.log2(step_size))
+        step_size = 2**(-num_frac_bits)
+        Wb = T.cast(quantize(weights, step_size, num_bits),theano.config.floatX)
+
+    elif quantization.upper()=='16BITS':
+        num_bits=int(16)
+        W_std=T.std(W)
+        W_mean=T.mean(W)
+        step_size= QUANTIZATION_STEP[num_bits-1] * (W_mean+W_std) * STEP_ADJ_FACTOR
+        num_frac_bits = np.ceil(-np.log2(step_size))
+        step_size = 2**(-num_frac_bits)
+        Wb = T.cast(quantize(weights, step_size, num_bits),theano.config.floatX)
+
     elif quantization.upper()=='BINARY':
         Wb = hard_sigmoid(W/H)
         if stochastic and not deterministic:
@@ -33,6 +64,9 @@ def binarization(W,H,deterministic=False,stochastic=False,srng=None,quantization
             Wb = T.round(Wb)
         Wb = T.cast(T.switch(Wb,H,-H), theano.config.floatX)
     
+    elif quantization.upper()=='TERNARY':
+        Wb=T.cast(T.gt(W,H)-T.lt(W,-H),theano.config.floatX)
+
     elif quantization.upper()=='ROUND':
         Wb=T.round(W)
     

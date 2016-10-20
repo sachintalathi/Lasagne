@@ -19,31 +19,47 @@ import optparse
 from collections import OrderedDict
 import time
 
-def keras_cnn_network(input_var):
+def keras_cnn_network(input_var,quantization=None,H=1.,stochastic=False):
     nonlinearity=lasagne.nonlinearities.rectify
     net={}
     net['l_in']=lasagne.layers.InputLayer((None,3,32,32),input_var=input_var)
-    net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
     
-    net[1]=batch_norm(lasagne.layers.Conv2DLayer(net[0],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+    if quantization==None:
+      net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+      net[1]=batch_norm(lasagne.layers.Conv2DLayer(net[0],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+    else:
+      net[0]=batch_norm(lasagne.layers.qConv2DLayer(net['l_in'],32,3,pad='same',nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+      net[1]=batch_norm(lasagne.layers.qConv2DLayer(net[0],32,3,pad='same',nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+
     net[2]=lasagne.layers.MaxPool2DLayer(net[1],2)
     net[3]=lasagne.layers.DropoutLayer(net[2],p=.25)
     
-    net[4]=batch_norm(lasagne.layers.Conv2DLayer(net[3],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
-    
-    net[5]=batch_norm(lasagne.layers.Conv2DLayer(net[4],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+    if quantization==None:
+      net[4]=batch_norm(lasagne.layers.Conv2DLayer(net[3],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+      net[5]=batch_norm(lasagne.layers.Conv2DLayer(net[4],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+    else:
+      net[4]=batch_norm(lasagne.layers.qConv2DLayer(net[3],64,3,pad='same',nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+      net[5]=batch_norm(lasagne.layers.qConv2DLayer(net[4],64,3,pad='same',nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+
     net[6]=lasagne.layers.MaxPool2DLayer(net[5],2)
     net[7]=lasagne.layers.DropoutLayer(net[6],p=.25)
    
-    net[8]=batch_norm(lasagne.layers.DenseLayer(net[7],num_units=512,nonlinearity=lasagne.nonlinearities.rectify))
+    if quantization==None:
+      net[8]=batch_norm(lasagne.layers.DenseLayer(net[7],num_units=512,nonlinearity=lasagne.nonlinearities.rectify))
+    else:
+      net[8]=batch_norm(lasagne.layers.qDenseLayer(net[7],num_units=512,nonlinearity=lasagne.nonlinearities.rectify,H=H,stochastic=stochastic,quantization=quantization))
+
     net[9]=lasagne.layers.DropoutLayer(net[8],p=.5)
     
-    net['l_out']=lasagne.layers.DenseLayer(net[9],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
-   
+    if quantization==None:
+      net['l_out']=lasagne.layers.DenseLayer(net[9],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
+    else:
+      net['l_out']=lasagne.layers.qDenseLayer(net[9],num_units=10,nonlinearity=lasagne.nonlinearities.softmax,H=H,stochastic=stochastic,quantization=quantization)
+    
     return net
 
 
-def simple_cnn_network(input_var,batchnorm_bool=0, dropout_bool=0, node_type='ReLU'):
+def simple_cnn_network(input_var, dropout_bool=0, node_type='ReLU',quantization=None,H=1.,stochastic=False):
   #Simple cnn network for prototyping
   if node_type.upper()=='RELU':
     nonlinearity=lasagne.nonlinearities.rectify
@@ -53,12 +69,14 @@ def simple_cnn_network(input_var,batchnorm_bool=0, dropout_bool=0, node_type='Re
   net={}
   net['l_in']=lasagne.layers.InputLayer((None,3,32,32))
   
-  if batchnorm_bool:
+  if quantization==None:
     net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],16,3,W=lasagne.init.HeUniform(),pad=1,nonlinearity=nonlinearity))
+    net['l_out']=lasagne.layers.DenseLayer(net[0],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
   else:
-    net[0]=lasagne.layers.Conv2DLayer(net['l_in'],16,3,W=lasagne.init.HeUniform(),pad=1,nonlinearity=nonlinearity)
+    net[0]=batch_norm(lasagne.layers.qConv2DLayer(net['l_in'],16,3,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+    net['l_out']=lasagne.layers.qDenseLayer(net[0],num_units=10,nonlinearity=lasagne.nonlinearities.softmax\
+      H=H,stochastic=stochastic,quantization=quantization)
   
-  net['l_out']=lasagne.layers.DenseLayer(net[0],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
   return net
 
 def cnn_network(input_var,node_type='ReLU',quantization=None,stochastic=False,H=1.):
@@ -162,7 +180,7 @@ if __name__=="__main__":
   #Theano definition for output probability distribution and class prediction
   print 'Set up the network and theano variables'
   if opts.simple_cnn:
-    net=simple_cnn_network(input,batchnorm_bool=batch_norm)
+    net=simple_cnn_network(input,quantization=opts.quantization)
   elif opts.cnn:
     net=cnn_network(input,node_type=opts.nonlinearity,quantization=opts.quantization,stochastic=opts.stochastic,H=1.)
   elif opts.kcnn:
@@ -183,15 +201,6 @@ if __name__=="__main__":
   train_pred=train_output.argmax(-1)
   loss=T.mean(lasagne.objectives.categorical_crossentropy(train_output,target))
   err=T.mean(T.neq(T.argmax(train_output,axis=1), target),dtype=theano.config.floatX)
-
-  ## Add L2 Regularization 
-  if opts.quantization==None:
-    layers={}
-    for k in net.keys():
-      layers[net[k]]=0.0005
-    l2_penalty = regularize_layer_params_weighted(layers, l2)  
-    ## Total loss
-    loss=loss+l2_penalty
 
   if opts.quantization==None:
     layers={}
