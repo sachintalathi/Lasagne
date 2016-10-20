@@ -200,7 +200,8 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
         D=pickle.load(open('%s/data_batch_%d'%(data_dir,batch_index+1)))
         assert 'data' in D.keys()
         data=D['data'].astype('float32')
-        data=(data-Data_Mean)/Data_Std
+        data=data/255
+        #data=(data-Data_Mean)/Data_Std
         data = data.reshape(data.shape[0], img_dim[0], img_dim[1], img_dim[2])
         assert 'labels' in D.keys()
         labels=np.array(D['labels'])
@@ -227,7 +228,8 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
         D_val=pickle.load(open('%s/test_batch'%(data_dir)))
         assert 'data' in D_val.keys()
         data=D_val['data'].astype('float32')
-        data=(data-Data_Mean)/Data_Std
+        data=data/255
+        #data=(data-Data_Mean)/Data_Std
         data=data.reshape(data.shape[0], img_dim[0], img_dim[1], img_dim[2])
         assert 'labels' in D_val.keys()
         labels=np.array(D_val['labels'])

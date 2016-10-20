@@ -13,9 +13,9 @@ import theano.tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import lasagne
 from lasagne.layers import batch_norm
-from lasagne.layers.quantize import compute_grads,clipping_scaling,train,binarization
 import cPickle as pickle
 import gzip
+from lasagne.layers.quantize import compute_grads,clipping_scaling,train,binarization
 from collections import OrderedDict
 import optparse
 py.ion()
@@ -132,7 +132,7 @@ if __name__ == "__main__":
             stochastic=stochastic,H=H,nonlinearity=nonlinearity,quantization=quantization)
     
     # Generate Figure:
-    fig_on=0
+    fig_on=1
     
     if fig_on:
         py.figure();py.subplot(131)
@@ -146,22 +146,23 @@ if __name__ == "__main__":
     #loss=T.mean(lasagne.objectives.multiclass_hinge_loss(train_output,target))
     err=T.mean(T.neq(T.argmax(train_output,axis=1), target),dtype=theano.config.floatX)
 
+    
     if quantization==None:
         params = lasagne.layers.get_all_params(net['l_out'], trainable=True)
         updates = lasagne.updates.adam(loss_or_grads=loss, params=params, learning_rate=LR)
     else:
-        paramsB = lasagne.layers.get_all_params(net['l_out'],  quantize=True)
-        params = lasagne.layers.get_all_params(net['l_out'], trainable=True, quantize=False)
+        paramsB = lasagne.layers.get_all_params(net['l_out'], quantize=True)
         W_grads = compute_grads(loss,net['l_out'])
         updates = lasagne.updates.adam(loss_or_grads=W_grads, params=paramsB, learning_rate=LR)
         updates = clipping_scaling(updates,net['l_out'],quantization)
+        params = lasagne.layers.get_all_params(net['l_out'], trainable=True, quantize=False)
         updates = OrderedDict(updates.items() + lasagne.updates.adam(loss_or_grads=loss, params=params, learning_rate=LR).items())
         
 
     print ('Define Test Output Theano Function..')
     
     test_output = lasagne.layers.get_output(net['l_out'], deterministic=True)
-    test_loss=T.mean(lasagne.objectives.categorical_crossentropy(test_output,target))
+    test_loss=T.mean(lasagne.objectives.multiclass_hinge_loss(test_output,target))
     test_err = T.mean(T.neq(T.argmax(test_output,axis=1), target),dtype=theano.config.floatX)
  
     
