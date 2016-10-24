@@ -1,6 +1,12 @@
 import sys
 import os
 
+#Command to Train network
+#python Learn_Examples/cifar10_binary.py -S --train --epochs 10 --home-dir /prj/neo-nas/users/stalathi/sachin-repo/Neo/SysPTSD/Lasagne --quantization ternary --memo test_ternary
+
+#Command to run test on trained model
+#python Learn_Examples/cifar10_binary.py -C --epochs 10 --home-dir /prj/neo-nas/users/stalathi/sachin-repo/Neo/SysPTSD/Lasagne --quantization pow --model-file /prj/neo_lv/user/stalathi/Lasagne_Models/Model_Cifar10_Pow.pkl 
+
 ## Some local adjustments to paths (not required for ubuntu machine)
 ## Not mandatory
 if '/Users/sachintalathi/Work/Python/Virtualenvs/DL_Lasagne/lib/python2.7/site-packages' in sys.path:
@@ -19,8 +25,11 @@ import optparse
 from collections import OrderedDict
 import time
 
-def keras_cnn_network(input_var,quantization=None,H=1.,stochastic=False):
-    nonlinearity=lasagne.nonlinearities.rectify
+def keras_cnn_network(input_var,quantization=None,H=1.,stochastic=False,node_type='ReLU'):
+    if node_type.upper()=='RELU':
+      nonlinearity=lasagne.nonlinearities.rectify
+    if node_type.upper()=='ELU':
+      nonlinearity=lasagne.nonlinearities.elu
     net={}
     net['l_in']=lasagne.layers.InputLayer((None,3,32,32),input_var=input_var)
     
@@ -74,7 +83,7 @@ def simple_cnn_network(input_var, dropout_bool=0, node_type='ReLU',quantization=
     net['l_out']=lasagne.layers.DenseLayer(net[0],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
   else:
     net[0]=batch_norm(lasagne.layers.qConv2DLayer(net['l_in'],16,3,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
-    net['l_out']=lasagne.layers.qDenseLayer(net[0],num_units=10,nonlinearity=lasagne.nonlinearities.softmax\
+    net['l_out']=lasagne.layers.qDenseLayer(net[0],num_units=10,nonlinearity=lasagne.nonlinearities.softmax,\
       H=H,stochastic=stochastic,quantization=quantization)
   
   return net
@@ -92,21 +101,26 @@ def cnn_network(input_var,node_type='ReLU',quantization=None,stochastic=False,H=
   net['l_d']=lasagne.layers.DropoutLayer(net['l_in'],p=.5)
   if quantization==None:
     net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_d'],256,3,pad=0,nonlinearity=nonlinearity))
-    net[1]=batch_norm(lasagne.layers.Conv2DLayer(net[0],128,3,stride=(2,2),pad=1,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
+    net['rnorm1']=lasagne.layers.LocalResponseNormalization2DLayer(net[0])
+    net[1]=batch_norm(lasagne.layers.Conv2DLayer(net['rnorm1'],128,3,stride=(2,2),pad=1,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
     net[2]=batch_norm(lasagne.layers.Conv2DLayer(net[1],256,3,stride=(1,1),pad=0,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
     net[3]=batch_norm(lasagne.layers.Conv2DLayer(net[2],256,3,stride=(1,1),pad=0,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
     net[4]=batch_norm(lasagne.layers.Conv2DLayer(net[3],256,3,stride=(2,2),pad=1,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
     net[5]=batch_norm(lasagne.layers.Conv2DLayer(net[4],128,7,stride=(5,5),pad=2,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
-    net['o_d']=lasagne.layers.DropoutLayer(net[5],p=.5)
+    net['rnorm2']=lasagne.layers.LocalResponseNormalization2DLayer(net[5],n=3)
+    net['o_d']=lasagne.layers.DropoutLayer(net['rnorm2'],p=.5)
     net['l_out']=lasagne.layers.DenseLayer(net['o_d'],num_units=10,nonlinearity=lasagne.nonlinearities.softmax)
   else:
     net[0]=batch_norm(lasagne.layers.qConv2DLayer(net['l_d'],256,3,pad=0,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
-    net[1]=batch_norm(lasagne.layers.qConv2DLayer(net[0],128,3,stride=(2,2),pad=1,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
-    net[2]=batch_norm(lasagne.layers.qConv2DLayer(net[1],256,3,stride=(1,1),pad=0,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+    net[1]=lasagne.layers.LocalResponseNormalization2DLayer(net[0])
+    net[2]=batch_norm(lasagne.layers.qConv2DLayer(net[1],128,3,stride=(2,2),pad=1,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
     net[3]=batch_norm(lasagne.layers.qConv2DLayer(net[2],256,3,stride=(1,1),pad=0,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
-    net[4]=batch_norm(lasagne.layers.qConv2DLayer(net[3],256,3,stride=(2,2),pad=1,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
-    net[5]=batch_norm(lasagne.layers.qConv2DLayer(net[4],128,7,stride=(5,5),pad=2,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
-    net['o_d']=lasagne.layers.DropoutLayer(net[5],p=.5)
+    net[4]=batch_norm(lasagne.layers.qConv2DLayer(net[3],256,3,stride=(1,1),pad=0,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+    net[5]=batch_norm(lasagne.layers.qConv2DLayer(net[4],256,3,stride=(2,2),pad=1,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+    net[6]=batch_norm(lasagne.layers.qConv2DLayer(net[5],128,7,stride=(5,5),pad=2,nonlinearity=nonlinearity,H=H,stochastic=stochastic,quantization=quantization))
+    net[7]=lasagne.layers.LocalResponseNormalization2DLayer(net[6],n=3)
+
+    net['o_d']=lasagne.layers.DropoutLayer(net[7],p=.5)
     net['l_out']=lasagne.layers.qDenseLayer(net['o_d'],num_units=10,nonlinearity=lasagne.nonlinearities.softmax,\
       H=H,stochastic=stochastic,quantization=quantization)
   
@@ -138,7 +152,7 @@ if __name__=="__main__":
   if os.path.isdir(opts.home_dir):
     sys.path.append(opts.home_dir)
   else:
-    print "%s not available"%opts.home_dir
+    print "Home Directory: %s, not available"%opts.home_dir
     sys.exit(0)
 
   import lasagne
@@ -184,7 +198,7 @@ if __name__=="__main__":
   elif opts.cnn:
     net=cnn_network(input,node_type=opts.nonlinearity,quantization=opts.quantization,stochastic=opts.stochastic,H=1.)
   elif opts.kcnn:
-    net=keras_cnn_network(input)
+    net=keras_cnn_network(input,node_type=opts.nonlinearity,quantization=opts.quantization)
   else:
     print ('No Network Defined')
     sys.exit(0)

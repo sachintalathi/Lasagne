@@ -299,8 +299,10 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
             train_err=train_err/N_train_batches
             per_epoch_train_stats.append([epoch,train_loss,train_err])
         if (epoch+1)%test_interval==0:
+            tic=time.clock()
             val_loss,val_err=val_on_batch(data_dir,img_dim,mini_batch_size,f_val)
             per_epoch_val_stats.append([epoch,val_loss,val_err])
+            toc=time.clock()
             print ('Epoch  (Time) %d (%0.03f s) Learning_Rate %0.04f Test Loss (Error)\
                 %.03f (%.03f)'%(epoch,toc-tic,LR,val_loss,val_err))
         LR*=lr_decay
