@@ -71,11 +71,6 @@ def random_shear(x, intensity, fill_mode="nearest", cval=0.):
     return x
 
 
-def random_channel_shift(x, rg):
-    # TODO
-    pass
-
-
 def random_zoom(x, rg, fill_mode="nearest", cval=0.):
     zoom_w = random.uniform(1.-rg, 1.)
     zoom_h = random.uniform(1.-rg, 1.)

@@ -7,6 +7,10 @@ import os
 #Command to run test on trained model
 #python Learn_Examples/cifar10_binary.py -C --epochs 10 --home-dir /prj/neo-nas/users/stalathi/sachin-repo/Neo/SysPTSD/Lasagne --quantization pow --model-file /prj/neo_lv/user/stalathi/Lasagne_Models/Model_Cifar10_Pow.pkl 
 
+### Example of how the code is to be run on cluster machines
+#bsub -Ip -q QcDev -P Neo -a neogpu -app 1gpuEP -R nvTitanX run_lasagnetest.sh > /prj/neo_lv/user/stalathi/Lasagne_Models/LogFiles/Log_Cifar10_NoQuantize.log 2
+  
+
 ## Some local adjustments to paths (not required for ubuntu machine)
 ## Not mandatory
 if '/Users/sachintalathi/Work/Python/Virtualenvs/DL_Lasagne/lib/python2.7/site-packages' in sys.path:
@@ -18,7 +22,6 @@ import theano
 import lasagne
 import theano.tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-import theano.tensor as T
 import numpy as np
 import pickle,gzip
 import optparse
@@ -91,6 +94,7 @@ def simple_cnn_network(input_var, dropout_bool=0, node_type='ReLU',quantization=
 def cnn_network(input_var,node_type='ReLU',quantization=None,stochastic=False,H=1.):
   ## The architecture that I designed for the Hyper-parameter Opt paper
   ## Assumne batch-norm throughout
+  # Currently unable to reproduce findings from cuda-convnet.. Need debugging!
   if node_type.upper()=='RELU':
     nonlinearity=lasagne.nonlinearities.rectify
   if node_type.upper()=='ELU':
@@ -122,11 +126,12 @@ def cnn_network(input_var,node_type='ReLU',quantization=None,stochastic=False,H=
 
     net['o_d']=lasagne.layers.DropoutLayer(net[7],p=.5)
     net['l_out']=lasagne.layers.qDenseLayer(net['o_d'],num_units=10,nonlinearity=lasagne.nonlinearities.softmax,\
-      H=H,stochastic=stochastic,quantization=quantization)
+      H=H,stochastic=stochastic,quantization=quantization)  ## Will produce an out prediction vector of dimension 10
   
   return net
 
 if __name__=="__main__":
+  #### Command Line Parser ########
   parser=optparse.OptionParser()
   parser.add_option("-S", "--simple-cnn",action="store_true",dest="simple_cnn",default=False,help="Use Simple CNN Network")
   parser.add_option("-C", "--cnn",action="store_true",dest="cnn",default=False,help="Use CNN Network")
@@ -162,8 +167,7 @@ if __name__=="__main__":
   from lasagne.layers import batch_norm
   from lasagne.image import ImageDataGenerator
 
-
-  #bsub -Ip -q QcDev -P Neo -a neogpu -app 1gpuEP -R nvTitanX run_lasagnetest.sh > /prj/neo_lv/user/stalathi/Lasagne_Models/LogFiles/Log_Cifar10_NoQuantize.log 2
+  ### Learning_Rate Cooling Set up.. Currently supporting exponential cooling only 
   LR_start = opts.learning_rate
   if opts.cool:
     LR_fin = 0.000003
@@ -172,8 +176,7 @@ if __name__=="__main__":
   LR_decay = (LR_fin/LR_start)**(1./opts.epochs)
   
   ####### Read data and Generate Data Batch Generator ############
-  ## Data is being directly read into batch_train module
-  
+  ## Inline data augmentation generator
   datagen = ImageDataGenerator(
           featurewise_center=False,  # set input mean to 0 over the dataset
           samplewise_center=False,  # set each sample mean to 0
@@ -187,8 +190,8 @@ if __name__=="__main__":
           vertical_flip=False)  # randomly flip images
   
   ######## Define theano variables and theano functions for training/validation and testing#############
-  input=T.tensor4()
-  target=T.ivector()
+  input=T.tensor4()  ## Input data images: for example, (10,32,32,3) implies.. we have 10 images of size 32,32,3
+  target=T.ivector() ## Target data labels: For above example... we have vector of 10x1
   LR = T.scalar('LR', dtype=theano.config.floatX)
 
   #Theano definition for output probability distribution and class prediction
