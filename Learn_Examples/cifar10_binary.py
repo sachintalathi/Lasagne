@@ -1,6 +1,8 @@
 import sys
 import os
-
+import matplotlib
+if 'MACOSX' in matplotlib.get_backend().upper():
+  matplotlib.use('TKAgg')
 #Command to Train network
 #python Learn_Examples/cifar10_binary.py -S --train --epochs 10 --home-dir /prj/neo-nas/users/stalathi/sachin-repo/Neo/SysPTSD/Lasagne --quantization ternary --memo test_ternary
 
@@ -19,7 +21,6 @@ sys.path.append('/usr/local/lib/python2.7/site-packages/')
 
 import pylab as py
 import theano
-import lasagne
 import theano.tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import numpy as np
@@ -27,6 +28,22 @@ import pickle,gzip
 import optparse
 from collections import OrderedDict
 import time
+
+def Generate_Viz(data,fig_bool=1):
+  if ('data' not in data.keys()) and ('filenames' not in data.keys()):
+    print 'Incorrect Cifar-10 data'
+    sys.exit(0)
+  Max_Ind=len(data['data'])
+  while True:
+    ind=np.random.randint(0,Max_Ind)
+    d=data['data'][ind,:].reshape(3,32,32).transpose(1,2,0)
+    filename=data['filenames'][ind]
+    label=data['labels'][ind]
+    if fig_bool:
+      py.figure()
+      py.imshow(d)
+      py.title(filename+'-'+str(label))
+    yield ind
 
 def keras_cnn_network(input_var,quantization=None,H=1.,stochastic=False,node_type='ReLU'):
     if node_type.upper()=='RELU':
