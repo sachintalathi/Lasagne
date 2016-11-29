@@ -16,6 +16,9 @@ import time
 import AM_Networks.helperfunctions as AH
 reload(AH)
 
+def parse_list(option, opt, value, parser):
+  setattr(parser.values, option.dest, value.split(','))
+
 if __name__=="__main__":
   parser=optparse.OptionParser()
   parser.add_option("-S", "--simple-cnn",action="store_true",dest="simple_cnn",default=False,help="Use Simple CNN Network")
@@ -33,18 +36,20 @@ if __name__=="__main__":
   parser.add_option("--nonlinearity",help="Nonlinearity type",dest="nonlinearity",type=str,default='RELU')
   parser.add_option("--train",action="store_true",dest="train",default=False,help="Train the network")
   parser.add_option("-a",action="store_true",dest="analyze",default=False,help="Analyze the network")
+  parser.add_option('--crop-size',type='str',action='callback',callback=parse_list,dest="crop_size")
+
   (opts,args)=parser.parse_args()
   np.random.seed(100)
-
+  crop_size=map(int,opts.crop_size)
     ######## Define theano variables and theano functions for training/validation and testing#############
   X_sym=T.tensor4()
   y_sym=T.ivector()
 
   #Theano definition for output probability distribution and class prediction
   if opts.simple_cnn:
-    net=AH.simple_cnn_network(X_sym)
+    net=AH.simple_cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
   elif opts.cnn:
-    net=AH.cnn_network(X_sym)
+    net=AH.cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
   else:
     print ('No Network Defined')
     sys.exit(0)
@@ -121,8 +126,8 @@ if __name__=="__main__":
   #Begin Training
   if opts.train:
     tic=time.clock()
-    peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,augment_bool=False,\
-      mini_batch_size=32,epochs=10,cool_factor=10,data_augment_bool=0)
+    peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,\
+      mini_batch_size=32,epochs=opts.epochs,cool_factor=10,data_augment_bool=opts.augment,img_size=crop_size)
     toc=time.clock()
     print 'Training Time:', (toc-tic), 's'  
     if len(opts.save_dir)!=0:

@@ -23,10 +23,10 @@ def batch_gen(X,y,batch_size=32):
 			idx_end=len(y)
 			break
 
-def Get_Data_Mean(Img_List):
+def Get_Data_Mean(Img_List,img_size=[224,224]):
   ## Get mean image stats
-  datagen=AM_Data_Generator(Img_List)
-  sum_img=np.zeros((3,224,224))
+  datagen=AM_Data_Generator(Img_List,img_size=img_size)
+  sum_img=np.zeros((3,img_size[0],img_size[1]))
   for _ in it.count():
     try:
     	X,y=next(datagen)
@@ -36,7 +36,7 @@ def Get_Data_Mean(Img_List):
     sum_img+=tmp_X
   #return mean_img/len(Img_List)
 
-def AM_Data_Generator(Img_List,batch_size=32):
+def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 	if not os.path.isfile(Img_List[0]):
 		print 'Data path does not exit'
 		sys.exit(0)
@@ -56,7 +56,7 @@ def AM_Data_Generator(Img_List,batch_size=32):
 			label_str=subset_Img_Array[i].split('/')[-1].split('_')[0]
 			label=0 if 'Bad' in label_str else (1 if 'Good' in label_str else 2)
 			#print label_str,label,subset_Img_Array[i]
-			img_resize=cv2.resize(img,(224,224),interpolation = cv2.INTER_LINEAR)
+			img_resize=cv2.resize(img,(img_size[0],img_size[1]),interpolation = cv2.INTER_LINEAR)
 			img_resize_rescale=1.0*img_resize/img_resize.max()	
 			#X[i,:,:,:]=img_resize_rescale
 			X.append(img_resize_rescale)
@@ -81,7 +81,7 @@ from lasagne.nonlinearities import rectify, softmax
 from lasagne.image import ImageDataGenerator
 from lasagne.layers import batch_norm
 
-def simple_cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),batchnorm_bool=0, dropout_bool=0, node_type='ReLU'):
+def simple_cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),batchnorm_bool=False, dropout_bool=False, node_type='ReLU'):
   #Simple cnn network for prototyping
 	if node_type.upper()=='RELU':
 		nonlinearity=lasagne.nonlinearities.rectify
@@ -98,7 +98,7 @@ def simple_cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),
   	net['l_out']=lasagne.layers.DenseLayer(net[0],num_units=num_units,nonlinearity=lasagne.nonlinearities.softmax)
   	return net
 
-def cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),batchnorm_bool=0, dropout_bool=0, node_type='ReLU'):
+def cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),batchnorm_bool=False, dropout_bool=False, node_type='ReLU'):
 	if node_type.upper()=='RELU':
 		nonlinearity=lasagne.nonlinearities.rectify
 	if node_type.upper()=='ELU':
@@ -240,8 +240,8 @@ def build_model():
 
     return net
 
-def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,augment_bool=False,\
-	mini_batch_size=32,epochs=10,cool_factor=10,data_augment_bool=0):
+def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_size=[224,224],\
+	mini_batch_size=32,epochs=10,cool_factor=10,data_augment_bool=False):
 
 	batch_size=256
 	## Data Augment Generator
@@ -286,11 +286,11 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,augm
 			count+=1
 
 		## Data generator
-		train_datagen=AM_Data_Generator(train_imglist,batch_size=batch_size)
+		train_datagen=AM_Data_Generator(train_imglist,batch_size=batch_size,img_size=img_size)
 		
 		## Data mean
 		if epoch==0:
-			mean_X=Get_Data_Mean(train_imglist)
+			mean_X=Get_Data_Mean(train_imglist,img_size=img_size)
 	
 		train_loss=0
 		train_acc=0
@@ -304,7 +304,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,augm
 			data=data[:]-mean_X
 
 			if data_augment_bool:
-				train_batches=datagen.flow(data,labels,mini_batch_size) ### Generates data augmentation on the fly
+				train_batches=augmentgen.flow(data,labels,mini_batch_size) ### Generates data augmentation on the fly
 			else:
 				train_batches=batch_gen(data,labels,mini_batch_size) ### No data augmentation applied
 		  
@@ -322,7 +322,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,augm
 		### Computing validation loss per epoch
 		val_loss=0
 		val_acc=0
-		test_datagen=AM_Data_Generator(test_imglist,batch_size)
+		test_datagen=AM_Data_Generator(test_imglist,batch_size=batch_size,img_size=img_size)
 		for count_iter in it.count():
 			try:
 				data,labels=next(test_datagen)
