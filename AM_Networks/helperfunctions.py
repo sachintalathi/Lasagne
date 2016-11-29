@@ -1,7 +1,7 @@
 import glob
 import numpy as np
 import cv2
-import os
+import os,sys
 import itertools as it
 import theano
 import theano.tensor as T
