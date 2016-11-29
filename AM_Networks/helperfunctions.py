@@ -296,7 +296,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,augm
 		train_acc=0
 		tic=time.clock()
 		for count_iter in it.count():
-			print epoch, count_iter
+			#print epoch, count_iter
 			try:
 				data,labels=next(train_datagen)
 			except StopIteration:
