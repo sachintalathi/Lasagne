@@ -207,7 +207,7 @@ if __name__=="__main__":
           vertical_flip=False)  # randomly flip images
   
   ######## Define theano variables and theano functions for training/validation and testing#############
-  input=T.tensor4()  ## Input data images: for example, (10,32,32,3) implies.. we have 10 images of size 32,32,3
+  inp=T.tensor4()  ## Input data images: for example, (10,32,32,3) implies.. we have 10 images of size 32,32,3
   target=T.ivector() ## Target data labels: For above example... we have vector of 10x1
   LR = T.scalar('LR', dtype=theano.config.floatX)
 
@@ -231,7 +231,7 @@ if __name__=="__main__":
       print('Trained model does not exist')
       sys.exit(0)
       
-  train_output=lasagne.layers.get_output(net['l_out'],input,deterministic=False)
+  train_output=lasagne.layers.get_output(net['l_out'],inp,deterministic=False)
   train_pred=train_output.argmax(-1)
   loss=T.mean(lasagne.objectives.categorical_crossentropy(train_output,target))
   err=T.mean(T.neq(T.argmax(train_output,axis=1), target),dtype=theano.config.floatX)
@@ -252,16 +252,16 @@ if __name__=="__main__":
     updates = clipping_scaling(updates,net['l_out'],opts.quantization)
     updates = OrderedDict(updates.items() + lasagne.updates.adam(loss_or_grads=loss, params=params, learning_rate=LR).items())
 
-  val_output=lasagne.layers.get_output(net['l_out'],input,deterministic=True)
+  val_output=lasagne.layers.get_output(net['l_out'],inp,deterministic=True)
   val_loss=T.mean(lasagne.objectives.categorical_crossentropy(val_output,target))
   val_err = T.mean(T.neq(T.argmax(val_output,axis=1), target),dtype=theano.config.floatX)
   val_pred=val_output.argmax(-1)
   
   #define training function
-  f_train=theano.function([input,target,LR],[loss,err],updates=updates,allow_input_downcast=True)
+  f_train=theano.function([inptarget,LR],[loss,err],updates=updates,allow_input_downcast=True)
 
   #define the validation function
-  f_val=theano.function([input,target],[val_loss,val_err],allow_input_downcast=True)
+  f_val=theano.function([inp,target],[val_loss,val_err],allow_input_downcast=True)
 
  
   #Begin Training

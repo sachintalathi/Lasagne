@@ -3,8 +3,7 @@ import numpy as np
 import cv2
 
 
-DataDir='/Users/talathi1/Work/DataSets/Resized_256x256'
-
+DataDir='/Users/talathi1/Work/DataSets/AM_Project/Resized_256x256'
 Img_List=glob.glob('%s/*.jpg'%DataDir)
 
 np.random.seed(100)
@@ -63,3 +62,17 @@ def Test_Generator(X,N,idx):
 
 X=np.random.randint(0,100,50)
 y=np.random.randn(50)
+
+
+
+def take(count,iterable):
+	counter=0
+	for item in iterable:
+		if counter==count:
+			return
+		counter+=1
+		yield item
+
+def run_take(count,items):
+	for item in take(count,items):
+		print(item)
