@@ -49,14 +49,15 @@ if __name__=="__main__":
   if opts.simple_cnn:
     net=AH.simple_cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
   elif opts.cnn:
-    net=AH.cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
+    #net=AH.cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
+    net=AH.nin_net(img_size=crop_size)
   else:
     print ('No Network Defined')
     sys.exit(0)
   
   ### Load pretrained model
   if len(opts.model_file)!=0:
-    [pt,pv,values]=pickle.load(open(opts.model_file))
+    [peps,values]=pickle.load(open(opts.model_file))
     lasagne.layers.set_all_param_values(net['l_out'],values)
     
       
@@ -143,6 +144,6 @@ if __name__=="__main__":
     input_var=layers[0].input_var
     feat={};fval={}
     for k in net:
-      feat[k]=lasagne.layers.get_output(net[k])
+      feat[k]=lasagne.layers.get_output(net[k],deterministic=True)
       fval[k]=theano.function([input_var],feat[k])
 

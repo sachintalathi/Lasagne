@@ -10,9 +10,9 @@ from lasagne.layers.dnn import Conv2DDNNLayer as ConvLayer
 from lasagne.layers import Pool2DLayer as PoolLayer
 from lasagne.utils import floatX
 
-def nin_net():
+def nin_net(num_channels=3,img_size=[32,32]):
 	net = {}
-	net['input'] = InputLayer((None, 3, 32, 32))
+	net['input'] = InputLayer((None, num_channels, img_size[0], img_size[1]))
 	net['conv1'] = ConvLayer(net['input'], num_filters=192, filter_size=5, pad=2, flip_filters=False)
 	net['cccp1'] = ConvLayer(net['conv1'], num_filters=160, filter_size=1, flip_filters=False)
 	net['cccp2'] = ConvLayer(net['cccp1'], num_filters=96, filter_size=1, flip_filters=False)
