@@ -94,9 +94,10 @@ if __name__=="__main__":
   f_pred=theano.function([X_sym],pred,allow_input_downcast=True)
 
   ## Get Data
-  o=open('/Users/talathi1/Work/DataSets/AM_Project/Train_Img_List.pkl')
+  home_dir=os.environ['HOME']
+  o=open('%s/Work/DataSets/AM_Project/Train_Img_List.pkl'%home_dir)
   train_imglist=pickle.load(o);o.close()
-  o=open('/Users/talathi1/Work/DataSets/AM_Project/Train_Img_List.pkl')
+  o=open('%s/Work/DataSets/AM_Project/Train_Img_List.pkl'%home_dir)
   test_imglist=pickle.load(o);o.close()
 
   #Begin Training
@@ -105,3 +106,14 @@ if __name__=="__main__":
     mini_batch_size=32,epochs=10,cool_factor=10,data_augment_bool=0)
   toc=time.clock()
   print(toc-tic)
+
+  ## Analyze:
+  analyze_bool=0
+  if analyze_bool:
+    layers=lasagne.layers.get_all_layers(net['l_out'])
+    input_var=layers[0].input_var
+    feat={};fval={}
+    for k in net:
+      feat[k]=lasagne.layers.get_output(net[k])
+      fval[k]=theano.function([input_var],feat[k])
+
