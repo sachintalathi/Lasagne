@@ -95,10 +95,19 @@ if __name__=="__main__":
 
   ## Get Data
   home_dir=os.environ['HOME']
-  o=open('%s/Work/DataSets/AM_Project/Train_Img_List.pkl'%home_dir)
-  train_imglist=pickle.load(o);o.close()
-  o=open('%s/Work/DataSets/AM_Project/Train_Img_List.pkl'%home_dir)
-  test_imglist=pickle.load(o);o.close()
+  o=open('%s/Work/DataSets/AM_Project/Relative_Path_Train_Imglist.pkl'%home_dir)
+  relpath_train_imglist=pickle.load(o);o.close()
+  train_imglist=[]
+  for k in relpath_train_imglist:
+    train_imglist.append('%s/Work/DataSets/AM_Project/Resized_256x256/%s'%(home_dir,k))
+
+  print train_imglist[0]
+
+  o=open('%s/Work/DataSets/AM_Project/Relative_Path_Test_Imglist.pkl'%home_dir)
+  relpath_test_imglist=pickle.load(o);o.close()
+  test_imglist=[]
+  for k in relpath_test_imglist:
+    test_imglist.append('%s/Work/DataSets/AM_Project/Resized_256x256/%s'%(home_dir,k))  
 
   #Begin Training
   tic=time.clock()
