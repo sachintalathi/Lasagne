@@ -1,4 +1,4 @@
-import sys
+import sys,os
 import matplotlib
 if 'MACOSX' in matplotlib.get_backend().upper():
   matplotlib.use('TKAgg')
