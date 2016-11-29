@@ -122,7 +122,7 @@ def cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),batchno
 	net['l_out']=lasagne.layers.DenseLayer(net[5],num_units=num_units,nonlinearity=lasagne.nonlinearities.softmax)
 	return net
 
-def nin_net(num_channels=3,img_size=[32,32]):
+def nin_net(num_units=3,num_channels=3,img_size=[32,32]):
 	### Trained model weights available for cifar10
 	net = {}
 	net['input'] = InputLayer((None, num_channels, img_size[0], img_size[1]))
@@ -138,9 +138,10 @@ def nin_net(num_channels=3,img_size=[32,32]):
 	net['drop6'] = DropoutLayer(net['pool2'], p=0.5)
 	net['conv3'] = ConvLayer(net['drop6'], num_filters=192, filter_size=3, pad=1, flip_filters=False)
 	net['cccp5'] = ConvLayer(net['conv3'], num_filters=192, filter_size=1, flip_filters=False)
-	net['cccp6'] = ConvLayer(net['cccp5'], num_filters=10, filter_size=1, flip_filters=False)
+	net['cccp6'] = ConvLayer(net['cccp5'], num_filters=num_units, filter_size=1, flip_filters=False)
 	net['pool3'] = PoolLayer(net['cccp6'], pool_size=8, mode='average_exc_pad', ignore_border=False)
 	net['l_out'] = lasagne.layers.FlattenLayer(net['pool3'])
+	#net['l_out']=lasagne.layers.DenseLayer(net['flat'],num_units=num_units,nonlinearity=lasagne.nonlinearities.softmax)
 	return net
 
 def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_size=[224,224],\
