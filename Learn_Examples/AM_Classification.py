@@ -26,11 +26,15 @@ if __name__=="__main__":
   parser.add_option("--cool-factor",help="Cool Factor",dest="cool_factor",type=int,default=10)
   parser.add_option("--epochs",help="epochs",dest="epochs",type=int,default=10)
   parser.add_option("--learning-rate",help="learning rate",dest="learning_rate",type=float,default=0.1)
-  parser.add_option("--data-dir",help="Data Path",dest="data_dir",type=str,default='/Users/sachintalathi/Work/Python/Data')
+  parser.add_option("--data-dir",help="Data Path",dest="data_dir",type=str,default='/Users/talathi1/Work/Python/Data')
+  parser.add_option("--save-dir",help="Save model path",dest="save_dir",type=str,default='')
+  parser.add_option("--memo",help="memo",dest="memo",type=str,default='')
+  parser.add_option("--model-file",help="pretrained model file path",dest="model_file",type=str,default='')
   parser.add_option("--nonlinearity",help="Nonlinearity type",dest="nonlinearity",type=str,default='RELU')
-
+  parser.add_option("--train",action="store_true",dest="train",default=False,help="Train the network")
+  parser.add_option("-a",action="store_true",dest="analyze",default=False,help="Analyze the network")
   (opts,args)=parser.parse_args()
-  np.random.seed(42)
+  np.random.seed(100)
 
     ######## Define theano variables and theano functions for training/validation and testing#############
   X_sym=T.tensor4()
@@ -44,7 +48,12 @@ if __name__=="__main__":
   else:
     print ('No Network Defined')
     sys.exit(0)
-          
+  
+  ### Load pretrained model
+  if len(opts.model_file)!=0:
+    [pt,pv,values]=pickle.load(open(opts.model_file))
+    lasagne.layers.set_all_param_values(net['l_out'],values)
+    
       
   output=lasagne.layers.get_output(net['l_out'],X_sym)
   pred=output.argmax(-1)
@@ -110,15 +119,21 @@ if __name__=="__main__":
     test_imglist.append('%s/Work/DataSets/AM_Project/Resized_256x256/%s'%(home_dir,k))  
 
   #Begin Training
-  tic=time.clock()
-  AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,augment_bool=False,\
-    mini_batch_size=32,epochs=10,cool_factor=10,data_augment_bool=0)
-  toc=time.clock()
-  print(toc-tic)
+  if opts.train:
+    tic=time.clock()
+    peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,augment_bool=False,\
+      mini_batch_size=32,epochs=10,cool_factor=10,data_augment_bool=0)
+    toc=time.clock()
+    print 'Training Time:', (toc-tic), 's'  
+    if len(opts.save_dir)!=0:
+      save_file='%s/%s.pkl'%(opts.save_dir,opts.memo)
+      values=lasagne.layers.get_all_param_values(net['l_out'])
+      o=open(save_file,'wb')
+      pickle.dump([peps,values],o)
+      o.close()
 
   ## Analyze:
-  analyze_bool=0
-  if analyze_bool:
+  if opts.analyze:
     layers=lasagne.layers.get_all_layers(net['l_out'])
     input_var=layers[0].input_var
     feat={};fval={}
