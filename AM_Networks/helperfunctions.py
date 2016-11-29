@@ -313,7 +313,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 			train_loss+=tlpb
 			train_acc+=tapb
 
-		print count_iter
+		#print count_iter
 		toc=time.clock()	
 		train_loss=train_loss/count_iter
 		train_acc=train_acc/count_iter
