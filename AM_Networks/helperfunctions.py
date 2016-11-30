@@ -142,7 +142,7 @@ def Get_Data_Mean(Img_List,img_size=[224,224]):
   #return mean_img/len(Img_List)
 
 
-#@async_prefetch
+@async_prefetch
 #@threadsafe_generator
 def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 	if not os.path.isfile(Img_List[0]):
@@ -330,7 +330,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 		train_loss=0
 		train_acc=0
 		tic=time.clock()
-		counter=0
+		count_iter=0
 		for data,labels in train_datagen:
 			#print epoch, count_iter
 			# data_tic=time.clock()
@@ -340,7 +340,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 			# 	break
 			# data_toc=time.clock()
 			# print 'Time to read batch data from AM Generator:',data_toc-data_tic
-			counter+=1
+			count_iter+=1
 			data=data[:]-mean_X
 
 			if data_augment_bool:
