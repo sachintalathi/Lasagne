@@ -7,41 +7,55 @@ import theano
 import theano.tensor as T
 import time
 np.random.seed(100)
-@async_prefetch
-def batch_gen(X,y,batch_size=32):
-	if len(y)<batch_size:
-		batch_size=len(y)
-	idx=0
-	idx_end=batch_size
-
-	while True:
-		ind=np.arange(idx,idx_end)
-		yield X[ind],y[ind]
-		idx+=batch_size
-		idx_end+=batch_size
-		if idx_end>len(y):
-			idx_end=len(y)
-			break
-
-def Get_Data_Mean(Img_List,img_size=[224,224]):
-  ## Get mean image stats
-  datagen=AM_Data_Generator(Img_List,img_size=img_size)
-  sum_img=np.zeros((3,img_size[0],img_size[1]))
-  for _ in it.count():
-    try:
-    	X,y=next(datagen)
-    except StopIteration:
-    	return sum_img/len(Img_List)
-    tmp_X=X.sum(axis=0)
-    sum_img+=tmp_X
-  #return mean_img/len(Img_List)
 
 ####################  Fast data generator using threading and decorators #######################
 import functools
 import Queue
 import threading
- 
-def async_prefetch_wrapper(iterable, buffer=1):
+
+class MyGen():
+    def __init__(self,generator):
+        self.queue = Queue.Queue()
+        # Put a first element into the queue, and initialize our thread
+        self.generator = generator
+        self.t = threading.Thread(target=self.worker, args=(self.queue, self.generator))
+        self.t.start()
+
+    def __iter__(self):
+        return self
+
+    def worker(self, queue, i):
+        queue.put(self.generator)
+
+    def __del__(self):
+        self.stop()
+
+    def stop(self):
+        while True: # Flush the queue
+            try:
+                self.queue.get(False)
+            except Queue.Empty:
+                break
+        self.t.join()
+
+    def next(self):
+        # Start a thread to compute the next next.
+        self.t.join()
+        #self.generator +=self.generator.next() 
+        self.t = threading.Thread(target=self.worker, args=(self.queue, self.generator))
+        self.t.start()
+
+        # Now deliver the already-queued element
+        while True:
+            try:
+                obj = self.queue.get(False)
+                self.queue.task_done()
+                return obj
+            except Queue.Empty:
+                pass
+            
+
+def async_prefetch_wrapper(iterable, buffer=10):
 	"""
 	wraps an iterater such that it produces items in the background
 	uses a bounded queue to limit memory consumption
@@ -96,8 +110,40 @@ def threadsafe_generator(f):
     def g(*a, **kw):
         return LockedIterator(f(*a, **kw))
     return g
+#####################################################################
 
 @async_prefetch
+def batch_gen(X,y,batch_size=32):
+	if len(y)<batch_size:
+		batch_size=len(y)
+	idx=0
+	idx_end=batch_size
+
+	while True:
+		ind=np.arange(idx,idx_end)
+		yield X[ind],y[ind]
+		idx+=batch_size
+		idx_end+=batch_size
+		if idx_end>len(y):
+			idx_end=len(y)
+			break
+
+def Get_Data_Mean(Img_List,img_size=[224,224]):
+  ## Get mean image stats
+  datagen=AM_Data_Generator(Img_List,img_size=img_size)
+  sum_img=np.zeros((3,img_size[0],img_size[1]))
+  for _ in it.count():
+    try:
+    	X,y=next(datagen)
+    except StopIteration:
+    	return sum_img/len(Img_List)
+    tmp_X=X.sum(axis=0)
+    sum_img+=tmp_X
+  #return mean_img/len(Img_List)
+
+
+#@async_prefetch
+#@threadsafe_generator
 def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 	if not os.path.isfile(Img_List[0]):
 		print 'Data path does not exit'
@@ -150,9 +196,6 @@ class BackgroundGenerator(threading.Thread):
             if next_item is None:
                  raise StopIteration
             return next_item
-
-
-
 		
 import lasagne
 from lasagne.layers import InputLayer, DropoutLayer,FlattenLayer
@@ -232,7 +275,7 @@ def nin_net(num_units=3,num_channels=3,img_size=[32,32]):
 def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_size=[224,224],\
 	mini_batch_size=32,epochs=10,cool_factor=10,data_augment_bool=False):
 
-	batch_size=32
+	batch_size=256
 	## Data Augment Generator
 	augmentgen = ImageDataGenerator(
 		featurewise_center=False,  # set input mean to 0 over the dataset
@@ -287,33 +330,29 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 		train_loss=0
 		train_acc=0
 		tic=time.clock()
-		for count_iter in it.count():
+		counter=0
+		for data,labels in train_datagen:
 			#print epoch, count_iter
-			data_tic=time.clock()
-			try:
-				data,labels=next(train_datagen)
-			except StopIteration:
-				break
-			data_toc=time.clock()
-			print 'Time to read batch data from AM Generator:',data_toc-data_tic
+			# data_tic=time.clock()
+			# try:
+			# 	data,labels=next(train_datagen)
+			# except StopIteration:
+			# 	break
+			# data_toc=time.clock()
+			# print 'Time to read batch data from AM Generator:',data_toc-data_tic
+			counter+=1
 			data=data[:]-mean_X
 
 			if data_augment_bool:
-				N_mini_batches=len(labels)//mini_batch_size
 				train_batches=augmentgen.flow(data,labels,mini_batch_size) ### Generates data augmentation on the fly
-				tlpb,tapb=batcheval(train_batches,f_train,N_mini_batches)
 			else:
-				loss,acc=f_train(data,labels)
-				tlpb=loss
-				tapb=acc
-				#train_batches=batch_gen(data,labels,mini_batch_size) ### No data augmentation applied
-		  
-			
-			
-			# ttic=time.clock()
-			# tlpb,tapb=batcheval(train_batches,f_train,N_mini_batches)
-			# ttoc=time.clock()
-			# print '           Time to train on data:',ttoc-ttic
+				train_batches=batch_gen(data,labels,mini_batch_size) ### No data augmentation applied
+
+			N_mini_batches=len(labels)//mini_batch_size
+			ttic=time.clock()
+			tlpb,tapb=batcheval(train_batches,f_train,N_mini_batches)
+			ttoc=time.clock()
+			print '           Time to train on data:',ttoc-ttic,',',counter
 			train_loss+=tlpb
 			train_acc+=tapb
 
@@ -327,21 +366,30 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 		val_loss=0
 		val_acc=0
 		test_datagen=AM_Data_Generator(test_imglist,batch_size=batch_size,img_size=img_size)
-		for count_iter in it.count():
-			try:
-				data,labels=next(test_datagen)
-			except StopIteration:
-				break
-			data=data[:]-mean_X
-			test_batches=batch_gen(data,labels,mini_batch_size)
+		for test_data,test_labels in test_datagen:
+			test_data=test_data[:]-mean_X
+			test_batches=batch_gen(test_data,test_labels,mini_batch_size)
 			N_mini_batches=len(labels)//mini_batch_size
-			#vlpb,vapb=batcheval(test_batches,f_val,N_mini_batches)
-			#val_loss+=vlpb
-			#val_acc+=vapb
+			vlpb,vapb=batcheval(test_batches,f_val,N_mini_batches)
+			val_loss+=vlpb
+			val_acc+=vapb
 		val_loss=val_loss/count_iter
 		val_acc=val_acc/count_iter  
-
-		#loss_ratio=val_loss/train_loss
 		per_epoch_performance_stats.append([epoch,train_loss,val_loss,train_acc,val_acc])
 		print ('Epoch %d Learning_Rate %0.04f Train (Val) %.03f (%.03f) Accuracy'%(epoch,np.array(plr()),train_acc,val_acc))
 	return per_epoch_performance_stats
+
+
+def test_datafetch(train_imglist,batch_size=256,img_size=[224,224]):
+	epochs=2
+	print('Running Epochs')
+	for epoch in range(epochs):
+		ttic=time.clock()
+		train_datagen=AM_Data_Generator(train_imglist,batch_size=batch_size,img_size=img_size)
+		count=0
+		for data,labels in train_datagen:
+			count+=1
+			print count
+		ttoc=time.clock()
+		print 'Time for epoch %d'%epoch, ttoc-ttic
+	return
