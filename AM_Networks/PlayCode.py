@@ -76,3 +76,108 @@ def take(count,iterable):
 def run_take(count,items):
 	for item in take(count,items):
 		print(item)
+
+def take(count,iterable):
+	counter=0
+	for item in iterable:
+		if counter==count:
+			return
+		counter+=1
+		yield item
+
+def run_take(count,items):
+	for item in take(count,items):
+		print(item)
+
+
+import threading
+class LockedIterator(object):
+    def __init__(self, it):
+        self.lock = threading.Lock()
+        self.it = it.__iter__()
+
+    def __iter__(self): return self
+
+    def next(self):
+        self.lock.acquire()
+        try:
+            return self.it.next()
+        finally:
+            self.lock.release()
+
+def threadsafe_generator(f):
+    """A decorator that takes a generator function and makes it thread-safe.
+    """
+    def g(*a, **kw):
+        return LockedIterator(f(*a, **kw))
+    return g
+
+
+## Test generatore read spead
+import itertools as it
+datagen=AH.AM_Data_Generator(imglist,batch_size=1000)
+tic=time.clock()
+for _ in it.count():
+	try:
+		X,y=next(datagen)
+		print len(X)
+	except StopIteration:
+		break
+toc=time.clock()
+print toc-tic
+
+testgen=AH.BackgroundGenerator(AH.AM_Data_Generator(imglist,batch_size=1000))
+tic=time.clock()
+for _ in it.count():
+	try:
+		X,y=testgen.next()
+		print len(X)
+	except StopIteration:
+		break
+toc=time.clock()
+print toc-tic	
+
+
+### Alternative generator
+class MyGen():
+    def __init__(self,generator):
+        self.queue = Queue.Queue()
+        # Put a first element into the queue, and initialize our thread
+        self.generator = generator
+        self.t = threading.Thread(target=self.worker, args=(self.queue, self.generator))
+        self.t.start()
+
+    def __iter__(self):
+        return self
+
+    def worker(self, queue, generator):
+        queue.put(generator)
+
+    def __del__(self):
+        self.stop()
+
+    def stop(self):
+        while True: # Flush the queue
+            try:
+                self.queue.get(False)
+            except Queue.Empty:
+                break
+        self.t.join()
+
+    def next(self):
+        # Start a thread to compute the next next.
+        self.t.join()
+        self.i += 1
+        self.t = threading.Thread(target=self.worker, args=(self.queue, self.i))
+        self.t.start()
+
+        # Now deliver the already-queued element
+        while True:
+            try:
+                print "request at", time.time()
+                obj = self.queue.get(False)
+                self.queue.task_done()
+                return obj
+            except Queue.Empty:
+                pass
+            time.sleep(.001)
