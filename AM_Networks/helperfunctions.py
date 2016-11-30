@@ -352,7 +352,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 			ttic=time.clock()
 			tlpb,tapb=batcheval(train_batches,f_train,N_mini_batches)
 			ttoc=time.clock()
-			print '           Time to train on data:',ttoc-ttic,',',counter
+			print '           Time to train on data:',ttoc-ttic,',',count_iter
 			train_loss+=tlpb
 			train_acc+=tapb
 
