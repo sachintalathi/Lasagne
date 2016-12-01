@@ -6,7 +6,12 @@ import itertools as it
 import theano
 import theano.tensor as T
 import time
+import joblib as jb
+import platform
 np.random.seed(100)
+
+if not 'Darwin' in platform.platform():
+	os.system("taskset -p 0xff %d" % os.getpid())
 
 ####################  Fast data generator using threading and decorators #######################
 import functools
@@ -142,6 +147,16 @@ def Get_Data_Mean(Img_List,img_size=[224,224]):
   #return mean_img/len(Img_List)
 
 
+def preprocess_img(filename,img_size=[224,224]):
+    img=cv2.imread(filename)
+    label_str=filename.split('/')[-1].split('_')[0]
+    label=0 if 'Bad' in label_str else (1 if 'Good' in label_str else 2)
+    #print label_str,label,subset_Img_Array[i]
+    img_resize=cv2.resize(img,(img_size[0],img_size[1]),interpolation = cv2.INTER_LINEAR)
+    img_resize_rescale=1.0*img_resize/img_resize.max()
+    return img_resize_rescale,label
+    
+
 @async_prefetch
 #@threadsafe_generator
 def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
@@ -156,20 +171,23 @@ def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 	Img_Array=np.array(Img_List)
 	#X=np.zeros((batch_size,224,224,3));y=np.zeros(batch_size)
 	while True:
-		X=[];y=[];
+		X=[];Y=[];
 		ind=np.arange(idx,idx_end)
 		subset_Img_Array=Img_Array[ind]
-		for i in range(len(subset_Img_Array)):
-			img=cv2.imread(subset_Img_Array[i])
-			label_str=subset_Img_Array[i].split('/')[-1].split('_')[0]
-			label=0 if 'Bad' in label_str else (1 if 'Good' in label_str else 2)
-			#print label_str,label,subset_Img_Array[i]
-			img_resize=cv2.resize(img,(img_size[0],img_size[1]),interpolation = cv2.INTER_LINEAR)
-			img_resize_rescale=1.0*img_resize/img_resize.max()	
-			#X[i,:,:,:]=img_resize_rescale
-			X.append(img_resize_rescale)
-			y.append(label)
-		yield np.array(X).swapaxes(3,1).swapaxes(3,2).astype('float32'),np.array(y).astype('float32')
+		items=jb.Parallel(n_jobs=10,backend="threading")(jb.delayed(preprocess_img)(f) for f in subset_Img_Array);
+		for x,y in items:
+			X.append(x);Y.append(y)
+		# for i in range(len(subset_Img_Array)):
+		# 	img=cv2.imread(subset_Img_Array[i])
+		# 	label_str=subset_Img_Array[i].split('/')[-1].split('_')[0]
+		# 	label=0 if 'Bad' in label_str else (1 if 'Good' in label_str else 2)
+		# 	#print label_str,label,subset_Img_Array[i]
+		# 	img_resize=cv2.resize(img,(img_size[0],img_size[1]),interpolation = cv2.INTER_LINEAR)
+		# 	img_resize_rescale=1.0*img_resize/img_resize.max()	
+		# 	#X[i,:,:,:]=img_resize_rescale
+		# 	X.append(img_resize_rescale)
+		# 	y.append(label)
+		yield np.array(X).swapaxes(3,1).swapaxes(3,2).astype('float32'),np.array(Y).astype('float32')
 		if idx_end==len(Img_List):
 			return
 		idx=idx+batch_size
