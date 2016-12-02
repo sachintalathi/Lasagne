@@ -127,10 +127,10 @@ if __name__=="__main__":
   #Begin Training
   if opts.train:
     tic=time.clock()
-    #peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,\
-     # mini_batch_size=32,epochs=opts.epochs,cool_factor=10,data_augment_bool=opts.augment,img_size=crop_size)
-    peps=AH.batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,img_size=crop_size,\
-      mini_batch_size=128,epochs=opts.epochs,cool_factor=10,shuffle=False)
+    peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,\
+      mini_batch_size=128,epochs=opts.epochs,cool_factor=10,data_augment_bool=opts.augment,img_size=crop_size)
+    #peps=AH.batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,img_size=crop_size,\
+     # mini_batch_size=128,epochs=opts.epochs,cool_factor=10,shuffle=False)
     toc=time.clock()
     print 'Training Time:', (toc-tic), 's'  
     if len(opts.save_dir)!=0:

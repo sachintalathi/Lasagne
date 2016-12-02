@@ -18,47 +18,6 @@ import functools
 import Queue
 import threading
 
-class MyGen():
-    def __init__(self,generator):
-        self.queue = Queue.Queue()
-        # Put a first element into the queue, and initialize our thread
-        self.generator = generator
-        self.t = threading.Thread(target=self.worker, args=(self.queue, self.generator))
-        self.t.start()
-
-    def __iter__(self):
-        return self
-
-    def worker(self, queue, i):
-        queue.put(self.generator)
-
-    def __del__(self):
-        self.stop()
-
-    def stop(self):
-        while True: # Flush the queue
-            try:
-                self.queue.get(False)
-            except Queue.Empty:
-                break
-        self.t.join()
-
-    def next(self):
-        # Start a thread to compute the next next.
-        self.t.join()
-        #self.generator +=self.generator.next() 
-        self.t = threading.Thread(target=self.worker, args=(self.queue, self.generator))
-        self.t.start()
-
-        # Now deliver the already-queued element
-        while True:
-            try:
-                obj = self.queue.get(False)
-                self.queue.task_done()
-                return obj
-            except Queue.Empty:
-                pass
-            
 
 def async_prefetch_wrapper(iterable, buffer=10):
 	"""
@@ -94,7 +53,6 @@ def async_prefetch(func):
 	return wrapper
 
 
-import threading
 class LockedIterator(object):
     def __init__(self, it):
         self.lock = threading.Lock()
@@ -154,7 +112,7 @@ def preprocess_img(filename,img_size=[224,224]):
     
 
 @async_prefetch
-#@threadsafe_generator
+@threadsafe_generator
 def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 	if not os.path.isfile(Img_List[0]):
 		print 'Data path does not exit'
@@ -169,7 +127,7 @@ def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 		X=[];Y=[];
 		ind=np.arange(idx,idx_end)
 		subset_Img_Array=Img_Array[ind]
-		items=jb.Parallel(n_jobs=10,backend="threading")(jb.delayed(preprocess_img)(f) for f in subset_Img_Array);
+		items=jb.Parallel(n_jobs=10)(jb.delayed(preprocess_img)(f,img_size=img_size) for f in subset_Img_Array);
 		for x,y in items:
 			X.append(x);Y.append(y)
 		yield np.array(X).swapaxes(3,1).swapaxes(3,2).astype('float32'),np.array(Y).astype('float32')
@@ -180,26 +138,110 @@ def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 		if idx_end>len(Img_List):
 			idx_end=len(Img_List)
 
-import Queue
-class BackgroundGenerator(threading.Thread):
-    def __init__(self, generator):
-        threading.Thread.__init__(self)
-        self.queue = Queue.Queue(1)
-        self.generator = generator
-        self.daemon = True
-        self.start()
 
-    def run(self):
-        for item in self.generator:
-            self.queue.put(item)
-        self.queue.put(None)
+class ListImageGenerator(object):
+    '''Generate minibatches from Imagelist.
+    '''
+    def __init__(self,samplewise_center=False,samplewise_std_normalization=False,rotation_range=0.,\
+    	width_shift_range=0.,height_shift_range=0.,shear_range=0.,horizontal_flip=False,vertical_flip=False):
+
+        self.__dict__.update(locals())
+        self.lock = threading.Lock()
+
+    def _flow_index(self, N, batch_size=32, shuffle=False, seed=None):
+        b = 0
+        total_b = 0
+        while 1:
+            if b == 0:
+                if seed is not None:
+                    np.random.seed(seed + total_b)
+
+                if shuffle:
+                    index_array = np.random.permutation(N)
+                else:
+                    index_array = np.arange(N)
+
+            current_index = (b * batch_size) % N
+            if N >= current_index + batch_size:
+                current_batch_size = batch_size
+            else:
+                current_batch_size = N - current_index
+
+            if current_batch_size == batch_size:
+                b += 1
+            else:
+                b = None  ### Note original code has b=0 ===> which allows for infinite iteration over image generatios
+            if current_index + current_batch_size==N:
+            	b=None
+            total_b += 1
+            yield index_array[current_index: current_index + current_batch_size], current_index, current_batch_size
+            if b==None:
+            	return  ## This allows to invoke StopIteration exception on completion of reading images in the list
+
+    def flow(self, imglist, numchannels=3,img_size=[224,224], batch_size=32, shuffle=False, seed=None):
+        self.imglist = imglist
+        self.num_channels=numchannels
+        self.img_size=img_size
+        self.flow_generator = self._flow_index(len(imglist), batch_size, shuffle, seed)
+        return self
+
+    def __iter__(self):
+        # needed if we want to do something like for x,y in data_gen.flow(...):
+        return self
 
     def next(self):
-            next_item = self.queue.get()
-            if next_item is None:
-                 raise StopIteration
-            return next_item
-		
+        with self.lock:
+            index_array, current_index, current_batch_size = next(self.flow_generator)
+        bX = np.zeros(tuple([current_batch_size] + [self.num_channels,self.img_size[0],self.img_size[1]]))
+        bY=np.zeros([current_batch_size],)
+        for i, j in enumerate(index_array):
+            x,y=self.preprocess_img(self.imglist[j])
+            x=self.standardize(x)
+            x=self.random_transform(x)
+            # x = self.X[j]
+            # x = self.random_transform(x.astype("float32"))
+            # x = self.standardize(x)
+            bX[i] = x; bY[i]=y
+        return bX.astype('float32'),bY.astype('float32')
+
+    def __next__(self):
+        # for python 3.x
+        return self.next()
+    
+    def preprocess_img(self,filename):
+        img=cv2.imread(filename)
+        label_str=filename.split('/')[-1].split('_')[0]
+        label=0 if 'Bad' in label_str else (1 if 'Good' in label_str else 2)
+        #print label_str,label,subset_Img_Array[i]
+        img_resize=cv2.resize(img,(self.img_size[0],self.img_size[1]),interpolation = cv2.INTER_LINEAR)
+        img_resize_rescale=1.0*img_resize/img_resize.max()
+        return img_resize_rescale.swapaxes(2,0).swapaxes(2,1),label
+
+
+    def standardize(self, x):
+        if self.samplewise_center:
+            x -= np.mean(x)
+        if self.samplewise_std_normalization:
+            x /= np.std(x)
+
+        return x
+
+    def random_transform(self, x):
+        if self.rotation_range:
+            x = random_rotation(x, self.rotation_range)
+        if self.width_shift_range or self.height_shift_range:
+            x = random_shift(x, self.width_shift_range, self.height_shift_range)
+        if self.horizontal_flip:
+            if random.random() < 0.5:
+                x = horizontal_flip(x)
+        if self.vertical_flip:
+            if random.random() < 0.5:
+                x = vertical_flip(x)
+        if self.shear_range:
+            x = random_shear(x,self.shear_range)
+        return x
+############################### End Defining Generators #########################################
+
 import lasagne
 from lasagne.layers import InputLayer, DropoutLayer,FlattenLayer
 from lasagne.layers import Conv2DLayer as ConvLayer
@@ -308,6 +350,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 	flr=theano.function([],lr,updates={lr:lr/cool_factor})
 
 	print('Running Epochs')
+	
 	for epoch in range(epochs):
 		## Cooling protocol
 		if cool_bool:
@@ -327,6 +370,7 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 		train_acc=0
 		tic=time.clock()
 		count_iter=0
+		print "*****************epoch****************:",epoch
 		for data,labels in train_datagen:
 			count_iter+=1
 			data=data[:]-mean_X
@@ -337,10 +381,10 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 				train_batches=batch_gen(data,labels,mini_batch_size) ### No data augmentation applied
 
 			N_mini_batches=len(labels)//mini_batch_size
-			ttic=time.clock()
+			#ttic=time.clock()
 			tlpb,tapb=batcheval(train_batches,f_train,N_mini_batches)
-			ttoc=time.clock()
-			print '           Time to train on data:',ttoc-ttic,',',count_iter
+			#ttoc=time.clock()
+			#print '           Time to train on data:',ttoc-ttic,',',count_iter
 			train_loss+=tlpb
 			train_acc+=tapb
 
@@ -370,106 +414,6 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 	return per_epoch_performance_stats
 
 
-class ListImageGenerator(object):
-    '''Generate minibatches from Imagelist.
-    '''
-    def __init__(self,samplewise_center=False,samplewise_std_normalization=False,rotation_range=0.,\
-    	width_shift_range=0.,height_shift_range=0.,shear_range=0.,horizontal_flip=False,vertical_flip=False):
-
-        self.__dict__.update(locals())
-        self.lock = threading.Lock()
-
-    def _flow_index(self, N, batch_size=32, shuffle=False, seed=None):
-        b = 0
-        total_b = 0
-        while 1:
-            if b == 0:
-                if seed is not None:
-                    np.random.seed(seed + total_b)
-
-                if shuffle:
-                    index_array = np.random.permutation(N)
-                else:
-                    index_array = np.arange(N)
-
-            current_index = (b * batch_size) % N
-            if N >= current_index + batch_size:
-                current_batch_size = batch_size
-            else:
-                current_batch_size = N - current_index
-
-            if current_batch_size == batch_size:
-                b += 1
-            else:
-                b = None  ### Note original code has b=0 ===> which allows for infinite iteration over image generatios
-            total_b += 1
-            print current_index,current_batch_size
-            yield index_array[current_index: current_index + current_batch_size], current_index, current_batch_size
-            if b==None:
-            	return  ## This allows to invoke StopIteration exception on completion of reading images in the list
-
-    def flow(self, imglist, numchannels=3,img_size=[224,224], batch_size=32, shuffle=False, seed=None):
-        self.imglist = imglist
-        self.num_channels=numchannels
-        self.img_size=img_size
-        self.flow_generator = self._flow_index(len(imglist), batch_size, shuffle, seed)
-        return self
-
-    def __iter__(self):
-        # needed if we want to do something like for x,y in data_gen.flow(...):
-        return self
-
-    def next(self):
-        with self.lock:
-            index_array, current_index, current_batch_size = next(self.flow_generator)
-        bX = np.zeros(tuple([current_batch_size] + [self.num_channels,self.img_size[0],self.img_size[1]]))
-        bY=np.zeros([current_batch_size],)
-        for i, j in enumerate(index_array):
-            x,y=self.preprocess_img(self.imglist[j])
-            x=self.standardize(x)
-            x=self.random_transform(x)
-            # x = self.X[j]
-            # x = self.random_transform(x.astype("float32"))
-            # x = self.standardize(x)
-            bX[i] = x; bY[i]=y
-        return bX.astype('float32'),bY.astype('float32')
-
-    def __next__(self):
-        # for python 3.x
-        return self.next()
-    
-    def preprocess_img(self,filename):
-        img=cv2.imread(filename)
-        label_str=filename.split('/')[-1].split('_')[0]
-        label=0 if 'Bad' in label_str else (1 if 'Good' in label_str else 2)
-        #print label_str,label,subset_Img_Array[i]
-        img_resize=cv2.resize(img,(self.img_size[0],self.img_size[1]),interpolation = cv2.INTER_LINEAR)
-        img_resize_rescale=1.0*img_resize/img_resize.max()
-        return img_resize_rescale.swapaxes(2,0).swapaxes(2,1),label
-
-
-    def standardize(self, x):
-        if self.samplewise_center:
-            x -= np.mean(x)
-        if self.samplewise_std_normalization:
-            x /= np.std(x)
-
-        return x
-
-    def random_transform(self, x):
-        if self.rotation_range:
-            x = random_rotation(x, self.rotation_range)
-        if self.width_shift_range or self.height_shift_range:
-            x = random_shift(x, self.width_shift_range, self.height_shift_range)
-        if self.horizontal_flip:
-            if random.random() < 0.5:
-                x = horizontal_flip(x)
-        if self.vertical_flip:
-            if random.random() < 0.5:
-                x = vertical_flip(x)
-        if self.shear_range:
-            x = random_shear(x,self.shear_range)
-        return x
 
 
 
@@ -494,6 +438,7 @@ def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val
 			count+=1
 
 		## Data generator
+		print mini_batch_size
 		train_datagen=listgen.flow(train_imglist,shuffle=shuffle,img_size=img_size,batch_size=mini_batch_size)
 		
 		## Data mean
@@ -504,6 +449,7 @@ def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val
 		train_acc=0
 		tic=time.clock()
 		count_iter=0
+		print "*****************epoch****************:",epoch
 		for data,labels in train_datagen:
 			count_iter+=1
 			data=data[:]-mean_X
@@ -525,7 +471,7 @@ def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val
 		for test_data,test_labels in test_datagen:
 			test_count_iter+=1
 			test_data=test_data[:]-mean_X
-			loss,acc=f_test(test_data,test_label)
+			loss,acc=f_val(test_data,test_labels)
 			val_loss+=loss
 			val_acc+=acc
 		val_loss=val_loss/test_count_iter
