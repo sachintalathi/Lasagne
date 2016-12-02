@@ -137,14 +137,10 @@ def Get_Data_Mean(Img_List,img_size=[224,224]):
   ## Get mean image stats
   datagen=AM_Data_Generator(Img_List,img_size=img_size)
   sum_img=np.zeros((3,img_size[0],img_size[1]))
-  for _ in it.count():
-    try:
-    	X,y=next(datagen)
-    except StopIteration:
-    	return sum_img/len(Img_List)
+  for X,y in datagen:
     tmp_X=X.sum(axis=0)
     sum_img+=tmp_X
-  #return mean_img/len(Img_List)
+  return sum_img/len(Img_List)
 
 
 def preprocess_img(filename,img_size=[224,224]):
@@ -169,7 +165,6 @@ def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 	idx_end=batch_size
 	
 	Img_Array=np.array(Img_List)
-	#X=np.zeros((batch_size,224,224,3));y=np.zeros(batch_size)
 	while True:
 		X=[];Y=[];
 		ind=np.arange(idx,idx_end)
@@ -177,16 +172,6 @@ def AM_Data_Generator(Img_List,img_size=[224,224],batch_size=32):
 		items=jb.Parallel(n_jobs=10,backend="threading")(jb.delayed(preprocess_img)(f) for f in subset_Img_Array);
 		for x,y in items:
 			X.append(x);Y.append(y)
-		# for i in range(len(subset_Img_Array)):
-		# 	img=cv2.imread(subset_Img_Array[i])
-		# 	label_str=subset_Img_Array[i].split('/')[-1].split('_')[0]
-		# 	label=0 if 'Bad' in label_str else (1 if 'Good' in label_str else 2)
-		# 	#print label_str,label,subset_Img_Array[i]
-		# 	img_resize=cv2.resize(img,(img_size[0],img_size[1]),interpolation = cv2.INTER_LINEAR)
-		# 	img_resize_rescale=1.0*img_resize/img_resize.max()	
-		# 	#X[i,:,:,:]=img_resize_rescale
-		# 	X.append(img_resize_rescale)
-		# 	y.append(label)
 		yield np.array(X).swapaxes(3,1).swapaxes(3,2).astype('float32'),np.array(Y).astype('float32')
 		if idx_end==len(Img_List):
 			return
@@ -310,15 +295,8 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 	def batcheval(train_batches,f_train,N_mini_batches):
 		train_loss_per_batch=0
 		train_acc_per_batch=0
-		for mini_batch in range(N_mini_batches):
-			try:
-				X,y=next(train_batches)
-			except StopIteration:
-				break
-			#ttic=time.clock()
+		for X,y in train_batches:
 			loss,acc=f_train(X,y)
-			#ttoc=time.clock()
-			#print 'Time for training per mini-batch:',ttoc-ttic
 			train_loss_per_batch+=loss
 			train_acc_per_batch+=acc
 		return train_loss_per_batch/N_mini_batches,train_acc_per_batch/N_mini_batches
@@ -350,14 +328,6 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 		tic=time.clock()
 		count_iter=0
 		for data,labels in train_datagen:
-			#print epoch, count_iter
-			# data_tic=time.clock()
-			# try:
-			# 	data,labels=next(train_datagen)
-			# except StopIteration:
-			# 	break
-			# data_toc=time.clock()
-			# print 'Time to read batch data from AM Generator:',data_toc-data_tic
 			count_iter+=1
 			data=data[:]-mean_X
 
@@ -383,8 +353,10 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 		### Computing validation loss per epoch
 		val_loss=0
 		val_acc=0
+		count_iter=0
 		test_datagen=AM_Data_Generator(test_imglist,batch_size=batch_size,img_size=img_size)
 		for test_data,test_labels in test_datagen:
+			count_iter+=1
 			test_data=test_data[:]-mean_X
 			test_batches=batch_gen(test_data,test_labels,mini_batch_size)
 			N_mini_batches=len(labels)//mini_batch_size
@@ -398,16 +370,167 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 	return per_epoch_performance_stats
 
 
-def test_datafetch(train_imglist,batch_size=256,img_size=[224,224]):
-	epochs=2
+class ListImageGenerator(object):
+    '''Generate minibatches from Imagelist.
+    '''
+    def __init__(self,samplewise_center=False,samplewise_std_normalization=False,rotation_range=0.,\
+    	width_shift_range=0.,height_shift_range=0.,shear_range=0.,horizontal_flip=False,vertical_flip=False):
+
+        self.__dict__.update(locals())
+        self.lock = threading.Lock()
+
+    def _flow_index(self, N, batch_size=32, shuffle=False, seed=None):
+        b = 0
+        total_b = 0
+        while 1:
+            if b == 0:
+                if seed is not None:
+                    np.random.seed(seed + total_b)
+
+                if shuffle:
+                    index_array = np.random.permutation(N)
+                else:
+                    index_array = np.arange(N)
+
+            current_index = (b * batch_size) % N
+            if N >= current_index + batch_size:
+                current_batch_size = batch_size
+            else:
+                current_batch_size = N - current_index
+
+            if current_batch_size == batch_size:
+                b += 1
+            else:
+                b = None  ### Note original code has b=0 ===> which allows for infinite iteration over image generatios
+            total_b += 1
+            print current_index,current_batch_size
+            yield index_array[current_index: current_index + current_batch_size], current_index, current_batch_size
+            if b==None:
+            	return  ## This allows to invoke StopIteration exception on completion of reading images in the list
+
+    def flow(self, imglist, numchannels=3,img_size=[224,224], batch_size=32, shuffle=False, seed=None):
+        self.imglist = imglist
+        self.num_channels=numchannels
+        self.img_size=img_size
+        self.flow_generator = self._flow_index(len(imglist), batch_size, shuffle, seed)
+        return self
+
+    def __iter__(self):
+        # needed if we want to do something like for x,y in data_gen.flow(...):
+        return self
+
+    def next(self):
+        with self.lock:
+            index_array, current_index, current_batch_size = next(self.flow_generator)
+        bX = np.zeros(tuple([current_batch_size] + [self.num_channels,self.img_size[0],self.img_size[1]]))
+        bY=np.zeros([current_batch_size],)
+        for i, j in enumerate(index_array):
+            x,y=self.preprocess_img(self.imglist[j])
+            x=self.standardize(x)
+            x=self.random_transform(x)
+            # x = self.X[j]
+            # x = self.random_transform(x.astype("float32"))
+            # x = self.standardize(x)
+            bX[i] = x; bY[i]=y
+        return bX.astype('float32'),bY.astype('float32')
+
+    def __next__(self):
+        # for python 3.x
+        return self.next()
+    
+    def preprocess_img(self,filename):
+        img=cv2.imread(filename)
+        label_str=filename.split('/')[-1].split('_')[0]
+        label=0 if 'Bad' in label_str else (1 if 'Good' in label_str else 2)
+        #print label_str,label,subset_Img_Array[i]
+        img_resize=cv2.resize(img,(self.img_size[0],self.img_size[1]),interpolation = cv2.INTER_LINEAR)
+        img_resize_rescale=1.0*img_resize/img_resize.max()
+        return img_resize_rescale.swapaxes(2,0).swapaxes(2,1),label
+
+
+    def standardize(self, x):
+        if self.samplewise_center:
+            x -= np.mean(x)
+        if self.samplewise_std_normalization:
+            x /= np.std(x)
+
+        return x
+
+    def random_transform(self, x):
+        if self.rotation_range:
+            x = random_rotation(x, self.rotation_range)
+        if self.width_shift_range or self.height_shift_range:
+            x = random_shift(x, self.width_shift_range, self.height_shift_range)
+        if self.horizontal_flip:
+            if random.random() < 0.5:
+                x = horizontal_flip(x)
+        if self.vertical_flip:
+            if random.random() < 0.5:
+                x = vertical_flip(x)
+        if self.shear_range:
+            x = random_shear(x,self.shear_range)
+        return x
+
+
+
+def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_size=[224,224],\
+	mini_batch_size=32,epochs=10,cool_factor=10,shuffle=False):
+
+	per_epoch_performance_stats=[]
+	count=0
+	epoch_list=[epochs/3,2*epochs/3,epochs]
+	plr=theano.function([],lr)
+	flr=theano.function([],lr,updates={lr:lr/cool_factor})
+
+	listgen=ListImageGenerator()
+	
 	print('Running Epochs')
 	for epoch in range(epochs):
-		ttic=time.clock()
-		train_datagen=AM_Data_Generator(train_imglist,batch_size=batch_size,img_size=img_size)
-		count=0
-		for data,labels in train_datagen:
+		## Cooling protocol
+		if cool_bool:
+		  if epoch>epoch_list[count] and epoch<=epoch_list[count]+1:
+			print ('Cool the learning rate')
+			flr()
 			count+=1
-			print count
-		ttoc=time.clock()
-		print 'Time for epoch %d'%epoch, ttoc-ttic
-	return
+
+		## Data generator
+		train_datagen=listgen.flow(train_imglist,shuffle=shuffle,img_size=img_size,batch_size=mini_batch_size)
+		
+		## Data mean
+		if epoch==0:
+			mean_X=Get_Data_Mean(train_imglist,img_size=img_size)  ### using the AM_Data_Generator code ===> Could possibly modify
+	
+		train_loss=0
+		train_acc=0
+		tic=time.clock()
+		count_iter=0
+		for data,labels in train_datagen:
+			count_iter+=1
+			data=data[:]-mean_X
+			loss,acc=f_train(data,labels)
+			train_loss+=loss
+			train_acc+=acc
+		#print count_iter
+		toc=time.clock()	
+		train_loss=train_loss/count_iter
+		train_acc=train_acc/count_iter
+		print ('Epoch %d (%0.05f s) Learning_Rate %0.04f Train Loss (Accuracy) %.03f (%.03f)'%(epoch,toc-tic,np.array(plr()),train_loss,train_acc))
+		
+		### Computing validation loss per epoch
+		val_loss=0
+		val_acc=0
+		test_datagen=listgen.flow(test_imglist,shuffle=False,img_size=img_size,batch_size=128)
+		
+		test_count_iter=0
+		for test_data,test_labels in test_datagen:
+			test_count_iter+=1
+			test_data=test_data[:]-mean_X
+			loss,acc=f_test(test_data,test_label)
+			val_loss+=loss
+			val_acc+=acc
+		val_loss=val_loss/test_count_iter
+		val_acc=val_acc/test_count_iter
+
+		per_epoch_performance_stats.append([epoch,train_loss,val_loss,train_acc,val_acc])
+		print ('Epoch %d Learning_Rate %0.04f Train (Val) %.03f (%.03f) Accuracy'%(epoch,np.array(plr()),train_acc,val_acc))
+	return per_epoch_performance_stats
