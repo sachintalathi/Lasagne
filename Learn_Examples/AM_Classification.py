@@ -9,6 +9,7 @@ from lasagne.regularization import regularize_layer_params_weighted, l2, l1
 from lasagne.regularization import regularize_layer_params
 import theano.tensor as T
 import numpy as np
+import glob
 import pickle,gzip
 import optparse
 from lasagne.image import ImageDataGenerator
@@ -50,7 +51,7 @@ if __name__=="__main__":
     net=AH.simple_cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
   elif opts.cnn:
     #net=AH.cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
-    net=AH.nin_net(img_size=crop_size)
+    net=AH.cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
   else:
     print ('No Network Defined')
     sys.exit(0)
@@ -110,27 +111,18 @@ if __name__=="__main__":
 
   ## Get Data
   home_dir=os.environ['HOME']
-  o=open('%s/Work/DataSets/AM_Project/Relative_Path_Train_Imglist.pkl'%home_dir)
-  relpath_train_imglist=pickle.load(o);o.close()
-  train_imglist=[]
-  for k in relpath_train_imglist:
-    train_imglist.append('%s/Work/DataSets/AM_Project/Resized_256x256/%s'%(home_dir,k))
-
-  print train_imglist[0]
-
-  o=open('%s/Work/DataSets/AM_Project/Relative_Path_Test_Imglist.pkl'%home_dir)
-  relpath_test_imglist=pickle.load(o);o.close()
-  test_imglist=[]
-  for k in relpath_test_imglist:
-    test_imglist.append('%s/Work/DataSets/AM_Project/Resized_256x256/%s'%(home_dir,k))  
+  imglist=glob.glob('%s/Work/DataSets/AM_Project/Resized_256x256/*'%home_dir)
+  np.random.shuffle(imglist)
+  train_imglist=imglist[0:32*256]
+  test_imglist=imglist[32*256:]
 
   #Begin Training
   if opts.train:
     tic=time.clock()
-    peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,\
-      mini_batch_size=128,epochs=opts.epochs,cool_factor=10,data_augment_bool=opts.augment,img_size=crop_size)
-    #peps=AH.batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,img_size=crop_size,\
-     # mini_batch_size=128,epochs=opts.epochs,cool_factor=10,shuffle=False)
+    #peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,\
+      #mini_batch_size=128,epochs=opts.epochs,cool_factor=10,data_augment_bool=opts.augment,img_size=crop_size)
+    peps=AH.batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,img_size=crop_size,\
+      mini_batch_size=128,epochs=opts.epochs,cool_factor=10,shuffle=False)
     toc=time.clock()
     print 'Training Time:', (toc-tic), 's'  
     if len(opts.save_dir)!=0:

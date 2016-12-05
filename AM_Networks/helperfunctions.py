@@ -252,7 +252,7 @@ from lasagne.layers import ElemwiseSumLayer
 from lasagne.layers import DenseLayer
 from lasagne.nonlinearities import rectify, softmax
 from lasagne.image import ImageDataGenerator
-from lasagne.layers import batch_norm
+from lasagne.layers import batch_norm,prelu
 
 def simple_cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),batchnorm_bool=False, dropout_bool=False, node_type='ReLU'):
   #Simple cnn network for prototyping
@@ -265,9 +265,9 @@ def simple_cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),
 	net['l_in']=lasagne.layers.InputLayer((None,img_channels,img_size[0],img_size[1]))
 
 	if batchnorm_bool:
-		net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],16,3,W=lasagne.init.HeUniform(),pad=1,nonlinearity=nonlinearity))
+		net[0]=batch_norm(prelu(lasagne.layers.Conv2DLayer(net['l_in'],16,3,W=lasagne.init.HeUniform(),pad=1)))
   	else:
-  		net[0]=lasagne.layers.Conv2DLayer(net['l_in'],16,3,W=lasagne.init.HeUniform(),pad=1,nonlinearity=nonlinearity)
+  		net[0]=prelu(lasagne.layers.Conv2DLayer(net['l_in'],16,3,W=lasagne.init.HeUniform(),pad=1))
   	net['l_out']=lasagne.layers.DenseLayer(net[0],num_units=num_units,nonlinearity=lasagne.nonlinearities.softmax)
   	return net
 
@@ -292,7 +292,8 @@ def cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),batchno
 		net[3]=batch_norm(lasagne.layers.Conv2DLayer(net[2],256,3,stride=(1,1),pad=0,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
 		net[4]=batch_norm(lasagne.layers.Conv2DLayer(net[3],256,3,stride=(2,2),pad=1,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
 		net[5]=batch_norm(lasagne.layers.Conv2DLayer(net[4],128,7,stride=(5,5),pad=2,W=lasagne.init.HeUniform(),nonlinearity=nonlinearity))
-	net['l_out']=lasagne.layers.DenseLayer(net[5],num_units=num_units,nonlinearity=lasagne.nonlinearities.softmax)
+	net['drop'] = DropoutLayer(net[5], p=0.5)
+	net['l_out']=lasagne.layers.DenseLayer(net['drop'],num_units=num_units,nonlinearity=lasagne.nonlinearities.softmax)
 	return net
 
 def nin_net(num_units=3,num_channels=3,img_size=[32,32]):
@@ -412,10 +413,6 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 		per_epoch_performance_stats.append([epoch,train_loss,val_loss,train_acc,val_acc])
 		print ('Epoch %d Learning_Rate %0.04f Train (Val) %.03f (%.03f) Accuracy'%(epoch,np.array(plr()),train_acc,val_acc))
 	return per_epoch_performance_stats
-
-
-
-
 
 def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_size=[224,224],\
 	mini_batch_size=32,epochs=10,cool_factor=10,shuffle=False):

@@ -3,7 +3,7 @@ import sys
 from collections import OrderedDict
 
 import numpy as np
-
+import numpy.random as nr
 # specifying the gpu to use
 # import theano.sandbox.cuda
 # theano.sandbox.cuda.use('gpu1') 
@@ -158,7 +158,42 @@ def compute_grads(loss,network):
                 
     return grads
 
+def get_data_dims(num_channels=3,inner_size=28,idx=0):
+        return inner_size**2 * num_channels if idx == 0 else 1
 
+def trim_borders(x, num_channels=3, inner_size=28, img_size=32,test=False,multiview=False,num_views=9):
+    target=[]
+    y = x.reshape(np.shape(x)[0], num_channels, img_size, img_size)
+    if inner_size>img_size:
+        target=x
+    
+    border_size=(img_size-inner_size)/2
+    
+    if test: # don't need to loop over cases
+        if multiview:
+            start_positions = [(0,0), (0, border_size), (0, border_size*2),
+                              (border_size, 0), (border_size, border_size), (border_size, border_size*2),
+                              (border_size*2, 0), (border_size*2, border_size), (border_size*2, border_size*2)]
+            end_positions = [(sy+inner_size, sx+inner_size) for (sy,sx) in start_positions]
+            for i in xrange(num_views):
+                val=y[:,:,start_positions[i][0]:end_positions[i][0],start_positions[i][1]:end_positions[i][1]]
+                val_inv=val[:,:,:,::-1]
+                target.append(val.reshape((x.shape[0],get_data_dims(num_channels=num_channels,inner_size=inner_size)),))
+                target.append(val_inv.reshape((x.shape[0],get_data_dims(num_channels=num_channels,inner_size=inner_size)),))
+            return np.array(target)            
+        else:
+            pic = y[:,:,border_size:border_size+inner_size,border_size:border_size+inner_size] # just take the center for now
+            target= pic.reshape((x.shape[0],get_data_dims(num_channels=num_channels,inner_size=inner_size)))
+            return target
+    else:
+        for c in xrange(x.shape[0]): # loop over cases
+            startY, startX = nr.randint(0,border_size*2 + 1), nr.randint(0,border_size*2 + 1)
+            endY, endX = startY + inner_size, startX + inner_size
+            pic = y[c,:,startY:endY,startX:endX]
+            if nr.randint(2) == 0: # also flip the image with 50% probability
+                pic = pic[:,:,::-1]
+            target.append(pic.reshape((get_data_dims(num_channels=num_channels,inner_size=inner_size),)))
+        return np.array(target)
 
 def train(train_fn,val_fn,N_Batches,N_generator,LR_start,LR_decay,num_epochs):
 
@@ -204,12 +239,13 @@ def train(train_fn,val_fn,N_Batches,N_generator,LR_start,LR_decay,num_epochs):
         LR*=LR_decay
     return per_epoch_performance_stats
 
-
-
-def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,lr_decay,img_dim=(3,32,32),\
+def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,lr_decay,img_size=(3,32,32),img_dim=(3,28,28),\
     epochs=10,test_interval=1,data_dir='/Users/sachintalathi/Work/Python/Data/cifar-10-batches-py',\
-    data_augment_bool=False,train_bool=True):
+    data_augment_bool=False,train_bool=True,trim_bool=False,multiview=False):
     
+    if not trim_bool:
+        img_dim=img_size
+
     def Get_Data_Stats(data_dir):
         s=np.zeros((3072,))
         sq=np.zeros((3072,))
@@ -230,12 +266,14 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
             idx=np.random.choice(len(y),N)
             yield X[idx].astype('float32'),y[idx].astype('float32')
 
-    def train_on_batch(batch_index,data_dir,Data_Mean,Data_Std,data_augment_bool,img_dim,mini_batch_size,f_train,LR):
+    def train_on_batch(batch_index,data_dir,data_augment_bool,img_size,img_dim,mini_batch_size,f_train,LR):
         D=pickle.load(open('%s/data_batch_%d'%(data_dir,batch_index+1)))
         assert 'data' in D.keys()
         data=D['data'].astype('float32')
         data=data/255
-        #data=(data-Data_Mean)/Data_Std
+        if trim_bool:
+            data=trim_borders(data, num_channels=3, inner_size=img_dim[1], img_size=img_size[1])
+
         data = data.reshape(data.shape[0], img_dim[0], img_dim[1], img_dim[2])
         assert 'labels' in D.keys()
         labels=np.array(D['labels'])
@@ -256,19 +294,8 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
         train_err_per_batch=train_err_per_batch/N_mini_batches
         return train_loss_per_batch,train_err_per_batch
     
-    def val_on_batch(data_dir,img_dim,mini_batch_size,f_val):
-        val_loss=0
-        val_err=0    
-        D_val=pickle.load(open('%s/test_batch'%(data_dir)))
-        assert 'data' in D_val.keys()
-        data=D_val['data'].astype('float32')
-        data=data/255
-        #data=(data-Data_Mean)/Data_Std
-        data=data.reshape(data.shape[0], img_dim[0], img_dim[1], img_dim[2])
-        assert 'labels' in D_val.keys()
-        labels=np.array(D_val['labels'])
-        val_batches=batch_gen(data,labels,mini_batch_size)
-        N_val_batches=len(labels)//mini_batch_size
+    def per_view_val_score(val_batches,N_val_batches):
+        val_loss=0;val_err=0
         for _ in range(N_val_batches):
             X,y=next(val_batches)
             loss,err=f_val(X,y)
@@ -278,8 +305,53 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
         val_err=val_err/N_val_batches
         return val_loss,val_err
 
+    def val_on_batch(data_dir,img_dim,mini_batch_size,f_val,multiview):
+        val_loss=0
+        val_err=0    
+        D_val=pickle.load(open('%s/test_batch'%(data_dir)))
+        assert 'data' in D_val.keys()
+        data=D_val['data'].astype('float32')
+        assert 'labels' in D_val.keys()
+        labels=np.array(D_val['labels'])
+        data=data/255
+        if trim_bool:
+            data=trim_borders(data, num_channels=3, inner_size=img_dim[1], img_size=img_size[1],test=True,multiview=multiview,num_views=9)
+            if multiview:  
+                score=[]
+                for i in range(np.shape(data)[0]):
+                    data_view=data[i,:,:].reshape(data.shape[1], img_dim[0], img_dim[1], img_dim[2])
+                    val_batches=batch_gen(data_view,labels,mini_batch_size)
+                    N_val_batches=len(labels)//mini_batch_size
+                    val_loss_per_view,val_err_per_view=per_view_val_score(val_batches,N_val_batches)
+                    val_loss+=val_loss_per_view
+                    val_err+=val_err_per_view
+                    score.append(val_err_per_view)
+                val_loss=val_loss/data.shape[0]
+                val_err=val_err/data.shape[0]
+                #print ['%.3f'%i for i in score],'mean:',np.mean(score)
+            else:
+                data_view=data.reshape(data.shape[0], img_dim[0], img_dim[1], img_dim[2])
+                val_batches=batch_gen(data_view,labels,mini_batch_size)
+                N_val_batches=len(labels)//mini_batch_size
+                val_loss,val_err=per_view_val_score(val_batches,N_val_batches)
+
+        else:
+            data_view=data.reshape(data.shape[0], img_dim[0], img_dim[1], img_dim[2])
+            val_batches=batch_gen(data_view,labels,mini_batch_size)
+            N_val_batches=len(labels)//mini_batch_size
+            val_loss,val_err=per_view_val_score(val_batches,N_val_batches)
+
+        # for _ in range(N_val_batches):
+        #     X,y=next(val_batches)
+        #     loss,err=f_val(X,y)
+        #     val_loss+=loss
+        #     val_err+=err
+        # val_loss=val_loss/N_val_batches
+        # val_err=val_err/N_val_batches
+        return val_loss,val_err
+
     per_epoch_train_stats=[];per_epoch_val_stats=[]
-    Data_Mean,Data_Std=Get_Data_Stats(data_dir)
+    #Data_Mean,Data_Std=Get_Data_Stats(data_dir)
 
     print('Running Epochs')
     LR=lr_start
@@ -289,7 +361,7 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
             train_err=0
             for ind in range(N_train_batches):
                 tic=time.clock()
-                tlpb,tapb=train_on_batch(ind,data_dir,Data_Mean,Data_Std,data_augment_bool,img_dim,mini_batch_size,f_train,LR)
+                tlpb,tapb=train_on_batch(ind,data_dir,data_augment_bool,img_size,img_dim,mini_batch_size,f_train,LR)
                 toc=time.clock()
                 print ('Epoch %d Data_Batch (Time) %d (%0.03f s) Learning_Rate %0.04f Train Loss (Error)\
                     %.03f (%.03f)'%(epoch,ind,toc-tic,LR,tlpb,tapb))
@@ -300,7 +372,7 @@ def batch_train(datagen,N_train_batches,mini_batch_size,f_train,f_val,lr_start,l
             per_epoch_train_stats.append([epoch,train_loss,train_err])
         if (epoch+1)%test_interval==0:
             tic=time.clock()
-            val_loss,val_err=val_on_batch(data_dir,img_dim,mini_batch_size,f_val)
+            val_loss,val_err=val_on_batch(data_dir,img_dim,mini_batch_size,f_val,multiview)
             per_epoch_val_stats.append([epoch,val_loss,val_err])
             toc=time.clock()
             print ('Epoch  (Time) %d (%0.03f s) Learning_Rate %0.04f Test Loss (Error)\

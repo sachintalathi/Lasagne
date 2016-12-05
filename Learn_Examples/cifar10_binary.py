@@ -24,34 +24,78 @@ import theano
 import theano.tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import numpy as np
+import numpy.random as nr
 import pickle,gzip
 import optparse
 from collections import OrderedDict
 import time
 
-def Generate_Viz(data,fig_bool=1):
+def get_data_dims(num_channels=3,inner_size=28,idx=0):
+        return inner_size**2 * num_channels if idx == 0 else 1
+
+def trim_borders(x, num_channels=3, inner_size=28, img_size=32,test=False,multiview=False,num_views=9):
+        target=[]
+        y = x.reshape(np.shape(x)[0], num_channels, img_size, img_size)
+
+        if inner_size>img_size:
+            target=x
+        
+        border_size=(img_size-inner_size)/2
+        
+        if test: # don't need to loop over cases
+            if multiview:
+                start_positions = [(0,0), (0, border_size), (0, border_size*2),
+                                  (border_size, 0), (border_size, border_size), (border_size, border_size*2),
+                                  (border_size*2, 0), (border_size*2, border_size), (border_size*2, border_size*2)]
+                end_positions = [(sy+inner_size, sx+inner_size) for (sy,sx) in start_positions]
+                for i in xrange(num_views):
+                    target.append(y[:,:,start_positions[i][0]:end_positions[i][0],start_positions[i][1]:end_positions[i][1]].reshape((x.shape[0],get_data_dims(num_channels=num_channels,inner_size=inner_size))))
+                return np.array(target)            
+            else:
+                pic = y[:,:,border_size:border_size+inner_size,border_size:border_size+inner_size] # just take the center for now
+                target= pic.reshape((x.shape[0],get_data_dims()))
+                return target
+        else:
+            for c in xrange(x.shape[0]): # loop over cases
+                startY, startX = nr.randint(0,border_size*2 + 1), nr.randint(0,border_size*2 + 1)
+                endY, endX = startY + inner_size, startX + inner_size
+                pic = y[c,:,startY:endY,startX:endX]
+                if nr.randint(2) == 0: # also flip the image with 50% probability
+                    pic = pic[:,:,::-1]
+                target.append(pic.reshape((get_data_dims(),)))
+            return np.array(target)
+
+def Generate_Viz(data,num_channels=3,img_size=(32,32),inner_size=(28,28),trim_bool=1,fig_bool=1):
+  ## data is of shape (N,size)
   if ('data' not in data.keys()) and ('filenames' not in data.keys()):
     print 'Incorrect Cifar-10 data'
     sys.exit(0)
   Max_Ind=len(data['data'])
   while True:
     ind=np.random.randint(0,Max_Ind)
-    d=data['data'][ind,:].reshape(3,32,32).transpose(1,2,0)
+    d=data['data']
+    if trim_bool:
+      dt=trim_borders(d,num_channels,inner_size=inner_size[0],img_size=img_size[0])
+      sz=inner_size
+    else:
+      dt=d
+      sz=img_size
+    img=dt[ind,:].reshape(num_channels,sz[0],sz[1]).transpose(1,2,0)
     filename=data['filenames'][ind]
     label=data['labels'][ind]
     if fig_bool:
       py.figure()
-      py.imshow(d)
+      py.imshow(img)
       py.title(filename+'-'+str(label))
     yield ind
 
-def keras_cnn_network(input_var,quantization=None,H=1.,stochastic=False,node_type='ReLU'):
+def keras_cnn_network(input_var,num_channels=3,img_size=(32,32),quantization=None,H=1.,stochastic=False,node_type='ReLU'):
     if node_type.upper()=='RELU':
       nonlinearity=lasagne.nonlinearities.rectify
     if node_type.upper()=='ELU':
       nonlinearity=lasagne.nonlinearities.elu
     net={}
-    net['l_in']=lasagne.layers.InputLayer((None,3,32,32),input_var=input_var)
+    net['l_in']=lasagne.layers.InputLayer((None,3,img_size[0],img_size[1]))
     
     if quantization==None:
       net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
@@ -88,7 +132,7 @@ def keras_cnn_network(input_var,quantization=None,H=1.,stochastic=False,node_typ
     return net
 
 
-def simple_cnn_network(input_var, dropout_bool=0, node_type='ReLU',quantization=None,H=1.,stochastic=False):
+def simple_cnn_network(input_var,num_channels=3,img_size=(32,32), dropout_bool=0, node_type='ReLU',quantization=None,H=1.,stochastic=False):
   #Simple cnn network for prototyping
   if node_type.upper()=='RELU':
     nonlinearity=lasagne.nonlinearities.rectify
@@ -96,7 +140,7 @@ def simple_cnn_network(input_var, dropout_bool=0, node_type='ReLU',quantization=
     nonlinearity=lasagne.nonlinearities.elu
   
   net={}
-  net['l_in']=lasagne.layers.InputLayer((None,3,32,32))
+  net['l_in']=lasagne.layers.InputLayer((None,num_channels,img_size[0],img_size[1]))
   
   if quantization==None:
     net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],16,3,W=lasagne.init.HeUniform(),pad=1,nonlinearity=nonlinearity))
@@ -108,7 +152,7 @@ def simple_cnn_network(input_var, dropout_bool=0, node_type='ReLU',quantization=
   
   return net
 
-def cnn_network(input_var,node_type='ReLU',quantization=None,stochastic=False,H=1.):
+def cnn_network(input_var,num_channels=3,img_size=(32,32),node_type='ReLU',quantization=None,stochastic=False,H=1.):
   ## The architecture that I designed for the Hyper-parameter Opt paper
   ## Assumne batch-norm throughout
   # Currently unable to reproduce findings from cuda-convnet.. Need debugging!
@@ -118,7 +162,7 @@ def cnn_network(input_var,node_type='ReLU',quantization=None,stochastic=False,H=
     nonlinearity=lasagne.nonlinearities.elu
     
   net={}
-  net['l_in']=lasagne.layers.InputLayer(shape=(None,3,32,32),input_var=input_var)
+  net['l_in']=lasagne.layers.InputLayer(shape=(None,num_channels,img_size[0],img_size[1]),input_var=input_var)
   net['l_d']=lasagne.layers.DropoutLayer(net['l_in'],p=.5)
   if quantization==None:
     net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_d'],256,3,pad=0,nonlinearity=nonlinearity))
@@ -158,6 +202,7 @@ if __name__=="__main__":
   parser.add_option("--stochastic",action="store_true",dest="stochastic",default=False,help="Stochastic Training")
   parser.add_option("--batch-size",help="Batch Size",dest="batch_size",type=int,default=64)
   parser.add_option("-c","--cool",action="store_true",dest="cool",default=False,help="Cool Learning Rate")
+  parser.add_option("--trim",action="store_true",dest="trim_bool",default=False,help="Boolean to trim data")
   parser.add_option("--epochs",help="epochs",dest="epochs",type=int,default=10)
   parser.add_option("--home-dir",help="Home Directory",dest="home_dir",type=str,default='')
   parser.add_option("--learning-rate",help="learning rate",dest="learning_rate",type=float,default=0.1)
@@ -167,10 +212,24 @@ if __name__=="__main__":
   parser.add_option("--save-dir",help="Save Directory",dest="save_dir",type=str,default='/prj/neo_lv/user/stalathi/Lasagne_Models')
   parser.add_option("--model-file",help="Trained Model Pickle File",dest="model_file",type=str,default='')
   parser.add_option("--memo",help="Memo",dest="memo",type=str,default=None)
-
+  parser.add_option("--inner-size",help="cropped img size",dest="inner_size",type=int,nargs=2)
+  parser.add_option("--img-size",help="actual img size",dest="img_size",type=int,nargs=2)
+  parser.add_option("--multiview",action="store_true",dest="multiview",default=False,help="multiview testing")
   (opts,args)=parser.parse_args()
   np.random.seed(42)
   
+  if opts.inner_size==None and opts.trim_bool:
+    opts.inner_size=(28,28)
+
+  if opts.inner_size==None and not opts.trim_bool:
+    opts.inner_size=(32,32)
+
+  if opts.inner_size!=None:
+    opts.trim_bool=True
+
+  if opts.img_size==None:
+    opts.img_size=(32,32)
+
   if os.path.isdir(opts.home_dir):
     sys.path.append(opts.home_dir)
   else:
@@ -180,7 +239,8 @@ if __name__=="__main__":
   import lasagne
   from lasagne.regularization import regularize_layer_params_weighted, l2, l1
   from lasagne.regularization import regularize_layer_params
-  from lasagne.layers.quantize import compute_grads,clipping_scaling,train,binarization,batch_train
+  import lasagne.layers.quantize as qt
+  reload(qt)
   from lasagne.layers import batch_norm
   from lasagne.image import ImageDataGenerator
 
@@ -214,15 +274,20 @@ if __name__=="__main__":
   #Theano definition for output probability distribution and class prediction
   print 'Set up the network and theano variables'
   if opts.simple_cnn:
-    net=simple_cnn_network(input,quantization=opts.quantization)
+    net=simple_cnn_network(inp,img_size=opts.inner_size,quantization=opts.quantization)
   elif opts.cnn:
-    net=cnn_network(input,node_type=opts.nonlinearity,quantization=opts.quantization,stochastic=opts.stochastic,H=1.)
+    net=cnn_network(inp,img_size=opts.inner_size,node_type=opts.nonlinearity,quantization=opts.quantization,stochastic=opts.stochastic,H=1.)
   elif opts.kcnn:
-    net=keras_cnn_network(input,node_type=opts.nonlinearity,quantization=opts.quantization)
+    net=keras_cnn_network(inp,img_size=opts.inner_size,node_type=opts.nonlinearity,quantization=opts.quantization)
   else:
     print ('No Network Defined')
     sys.exit(0)
   
+  
+  layers=lasagne.layers.get_all_layers(net['l_out'])
+  for l in layers:
+    print l.output_shape
+
   if len(opts.model_file)!=0:
     if os.path.isfile(opts.model_file):
       [pt,pv,values]=pickle.load(open(opts.model_file))
@@ -247,9 +312,9 @@ if __name__=="__main__":
   else:
     paramsB = lasagne.layers.get_all_params(net['l_out'],  quantize=True)
     params = lasagne.layers.get_all_params(net['l_out'], trainable=True, quantize=False)
-    W_grads = compute_grads(loss,net['l_out'])
+    W_grads = qt.compute_grads(loss,net['l_out'])
     updates = lasagne.updates.adam(loss_or_grads=W_grads, params=paramsB, learning_rate=LR)
-    updates = clipping_scaling(updates,net['l_out'],opts.quantization)
+    updates = qt.clipping_scaling(updates,net['l_out'],opts.quantization)
     updates = OrderedDict(updates.items() + lasagne.updates.adam(loss_or_grads=loss, params=params, learning_rate=LR).items())
 
   val_output=lasagne.layers.get_output(net['l_out'],inp,deterministic=True)
@@ -258,17 +323,17 @@ if __name__=="__main__":
   val_pred=val_output.argmax(-1)
   
   #define training function
-  f_train=theano.function([inptarget,LR],[loss,err],updates=updates,allow_input_downcast=True)
+  f_train=theano.function([inp,target,LR],[loss,err],updates=updates,allow_input_downcast=True)
 
   #define the validation function
   f_val=theano.function([inp,target],[val_loss,val_err],allow_input_downcast=True)
 
- 
   #Begin Training
   print 'begin training'
   tic=time.clock()
-  pt,pv=batch_train(datagen,5,32,f_train,f_val,LR_start,LR_decay,(3,32,32),epochs=opts.epochs,\
-    test_interval=1,data_augment_bool=opts.augment,data_dir=opts.data_dir,train_bool=opts.train)
+  pt,pv=qt.batch_train(datagen,5,32,f_train,f_val,LR_start,LR_decay,\
+    img_dim=(3,opts.inner_size[0],opts.inner_size[1]),epochs=opts.epochs,test_interval=1,\
+    data_augment_bool=opts.augment,data_dir=opts.data_dir,train_bool=opts.train,trim_bool=opts.trim_bool,multiview=opts.multiview)
   if opts.train:
     values=lasagne.layers.get_all_param_values(net['l_out'])
   toc=time.clock()
@@ -277,6 +342,7 @@ if __name__=="__main__":
 
   ## Save Results
   if opts.save_dir!=None and opts.memo!=None:
+    print 'Saving Model....'
     save_file='%s/Model_%s.pkl'%(opts.save_dir,opts.memo)
     o=open(save_file,'wb')
     pickle.dump([pt,pv,values],o)
