@@ -7,6 +7,7 @@ import theano
 import lasagne
 from lasagne.regularization import regularize_layer_params_weighted, l2, l1
 from lasagne.regularization import regularize_layer_params
+import lasagne.model_utils as mu
 import theano.tensor as T
 import numpy as np
 import glob
@@ -24,6 +25,7 @@ if __name__=="__main__":
   parser=optparse.OptionParser()
   parser.add_option("-S", "--simple-cnn",action="store_true",dest="simple_cnn",default=False,help="Use Simple CNN Network")
   parser.add_option("-C", "--cnn",action="store_true",dest="cnn",default=False,help="Use CNN Network")
+  parser.add_option("-K", "--kcnn",action="store_true",dest="kcnn",default=False,help="Use Keras CNN Network")
   parser.add_option("-A", "--augment",action="store_true",dest="augment",default=False,help="Augment Training Data")
   parser.add_option("--batch-size",help="Batch Size",dest="batch_size",type=int,default=64)
   parser.add_option("-c","--cool",action="store_true",dest="cool",default=False,help="Cool Learning Rate")
@@ -48,14 +50,19 @@ if __name__=="__main__":
 
   #Theano definition for output probability distribution and class prediction
   if opts.simple_cnn:
-    net=AH.simple_cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
+    net=AH.simple_cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True,node_type=opts.nonlinearity)
   elif opts.cnn:
-    #net=AH.cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
-    net=AH.cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True)
+    net=AH.cnn_network(X_sym,img_size=crop_size,batchnorm_bool=True,node_type=opts.nonlinearity)
+  elif opts.kcnn:
+    net=AH.keras_cnn_network(X_sym,img_size=crop_size,node_type=opts.nonlinearity)
   else:
     print ('No Network Defined')
     sys.exit(0)
   
+  ### Print model stats:
+  mu.Model_Info(net)
+  #sys.exit(0)
+
   ### Load pretrained model
   if len(opts.model_file)!=0:
     [peps,values]=pickle.load(open(opts.model_file))

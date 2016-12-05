@@ -271,6 +271,27 @@ def simple_cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),
   	net['l_out']=lasagne.layers.DenseLayer(net[0],num_units=num_units,nonlinearity=lasagne.nonlinearities.softmax)
   	return net
 
+def keras_cnn_network(input_var,num_channels=3,img_size=(32,32),num_units=3,node_type='ReLU'):
+	if node_type.upper()=='RELU':
+		nonlinearity=lasagne.nonlinearities.rectify
+	if node_type.upper()=='ELU':
+		nonlinearity=lasagne.nonlinearities.elu
+	
+	net={}
+	net['l_in']=lasagne.layers.InputLayer((None,3,img_size[0],img_size[1]))
+	net[0]=batch_norm(lasagne.layers.Conv2DLayer(net['l_in'],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+	net[1]=batch_norm(lasagne.layers.Conv2DLayer(net[0],32,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+	net[2]=lasagne.layers.MaxPool2DLayer(net[1],2)
+	net[3]=lasagne.layers.DropoutLayer(net[2],p=.25)
+	net[4]=batch_norm(lasagne.layers.Conv2DLayer(net[3],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+	net[5]=batch_norm(lasagne.layers.Conv2DLayer(net[4],64,3,W=lasagne.init.HeUniform(),pad='same',nonlinearity=nonlinearity))
+	net[6]=lasagne.layers.MaxPool2DLayer(net[5],2)
+	net[7]=lasagne.layers.DropoutLayer(net[6],p=.25)
+	net[8]=batch_norm(lasagne.layers.DenseLayer(net[7],num_units=512,nonlinearity=lasagne.nonlinearities.rectify))
+	net[9]=lasagne.layers.DropoutLayer(net[8],p=.5)
+	net['l_out']=lasagne.layers.DenseLayer(net[9],num_units=num_units,nonlinearity=lasagne.nonlinearities.softmax)
+	return net
+
 def cnn_network(input_var,num_units=3,img_channels=3, img_size=(224,224),batchnorm_bool=False, dropout_bool=False, node_type='ReLU'):
 	if node_type.upper()=='RELU':
 		nonlinearity=lasagne.nonlinearities.rectify
@@ -425,7 +446,7 @@ def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val
 
 	listgen=ListImageGenerator()
 	
-	print('Running Epochs')
+	print('Running Epochs...')
 	for epoch in range(epochs):
 		## Cooling protocol
 		if cool_bool:
@@ -435,7 +456,6 @@ def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val
 			count+=1
 
 		## Data generator
-		print mini_batch_size
 		train_datagen=listgen.flow(train_imglist,shuffle=shuffle,img_size=img_size,batch_size=mini_batch_size)
 		
 		## Data mean
