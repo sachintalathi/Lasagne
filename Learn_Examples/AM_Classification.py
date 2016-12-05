@@ -70,8 +70,8 @@ if __name__=="__main__":
   ### Load pretrained model
   if len(opts.model_file)!=0:
     print 'Load pre-trained model...'
-    [peps,values]=pickle.load(open(opts.model_file))
-    lasagne.layers.set_all_param_values(net['l_out'],values)
+    npzfile=np.load(opts.model_file)
+    lasagne.layers.set_all_param_values(net['l_out'],npzfile['arr_0'])
     
       
   output=lasagne.layers.get_output(net['l_out'],X_sym)
@@ -129,21 +129,31 @@ if __name__=="__main__":
   train_imglist=imglist[0:32*256]
   test_imglist=imglist[32*256:]
 
+  ### File to save the best model
+  if len(opts.save_dir)!=0:
+      save_file='%s/%s.npz'%(opts.save_dir,opts.memo)
+  else:
+    save_file=None
+
   #Begin Training
-  if opts.train:
-    print 'Begin Training..'
+  if opts.train or len(opts.model_file)!=0:
+    if opts.train:
+      print 'Begin Training... '
+    else:
+      print 'Evaluate Model Performance..'
     tic=time.clock()
     #peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,\
       #mini_batch_size=128,epochs=opts.epochs,cool_factor=10,data_augment_bool=opts.augment,img_size=crop_size)
-    peps=AH.batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,img_size=crop_size,\
-      mini_batch_size=opts.batch_size,epochs=opts.epochs,cool_factor=10,shuffle=False)
+    peps=AH.batch_train_with_ListImageGenerator(save_file,net,train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,img_size=crop_size,\
+      mini_batch_size=opts.batch_size,epochs=opts.epochs,cool_factor=10,shuffle=False,train_bool=opts.train)
     toc=time.clock()
     print 'Training Time:', (toc-tic), 's'  
+    
+    ## Save Training Evolution Data
     if len(opts.save_dir)!=0:
-      save_file='%s/%s.pkl'%(opts.save_dir,opts.memo)
-      values=lasagne.layers.get_all_param_values(net['l_out'])
+      save_file='%s/%s_TrainScore.pkl'%(opts.save_dir,opts.memo)
       o=open(save_file,'wb')
-      pickle.dump([peps,values],o)
+      pickle.dump(peps,o)
       o.close()
 
   ## Analyze:

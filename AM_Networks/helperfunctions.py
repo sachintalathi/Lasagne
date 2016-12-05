@@ -435,18 +435,22 @@ def batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_
 		print ('Epoch %d Learning_Rate %0.04f Train (Val) %.03f (%.03f) Accuracy'%(epoch,np.array(plr()),train_acc,val_acc))
 	return per_epoch_performance_stats
 
-def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_size=[224,224],\
-	mini_batch_size=32,epochs=10,cool_factor=10,shuffle=False):
+def batch_train_with_ListImageGenerator(save_file,net,train_imglist,test_imglist,f_train,f_val,lr,cool_bool=False,img_size=[224,224],\
+	mini_batch_size=32,epochs=10,cool_factor=10,shuffle=False,train_bool=False):
 
 	per_epoch_performance_stats=[]
 	count=0
 	epoch_list=[epochs/3,2*epochs/3,epochs]
 	plr=theano.function([],lr)
 	flr=theano.function([],lr,updates={lr:lr/cool_factor})
-
 	listgen=ListImageGenerator()
-	
-	print('Running Epochs...')
+	## Get Data Mean:
+	mean_X=Get_Data_Mean(train_imglist,img_size=img_size)
+
+	if not train_bool:
+		epochs=1
+
+	val_acc_old=0
 	for epoch in range(epochs):
 		## Cooling protocol
 		if cool_bool:
@@ -455,36 +459,32 @@ def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val
 			flr()
 			count+=1
 
-		## Data generator
-		train_datagen=listgen.flow(train_imglist,shuffle=shuffle,img_size=img_size,batch_size=mini_batch_size)
-		
-		## Data mean
-		if epoch==0:
-			mean_X=Get_Data_Mean(train_imglist,img_size=img_size)  ### using the AM_Data_Generator code ===> Could possibly modify
-	
-		train_loss=0
-		train_acc=0
-		tic=time.clock()
-		count_iter=0
-		print "*****************epoch****************:",epoch
-		for data,labels in train_datagen:
-			count_iter+=1
-			data=data[:]-mean_X
-			loss,acc=f_train(data,labels)
-			train_loss+=loss
-			train_acc+=acc
-		#print count_iter
-		toc=time.clock()	
-		train_loss=train_loss/count_iter
-		train_acc=train_acc/count_iter
-		print ('Epoch %d (%0.05f s) Learning_Rate %0.04f Train Loss (Accuracy) %.03f (%.03f)'%(epoch,toc-tic,np.array(plr()),train_loss,train_acc))
+		if train_bool:
+			## Data generator
+			train_datagen=listgen.flow(train_imglist,shuffle=shuffle,img_size=img_size,batch_size=mini_batch_size)
+			train_loss=0
+			train_acc=0
+			tic=time.clock()
+			count_iter=0
+			for data,labels in train_datagen:
+				count_iter+=1
+				data=data[:]-mean_X
+				loss,acc=f_train(data,labels)
+				train_loss+=loss
+				train_acc+=acc
+			#print count_iter
+			toc=time.clock()	
+			train_loss=train_loss/count_iter
+			train_acc=train_acc/count_iter
+			print ('Epoch %d (%0.05f s) Learning_Rate %0.04f Train Loss (Accuracy) %.03f (%.03f)'%(epoch,toc-tic,np.array(plr()),train_loss,train_acc))
 		
 		### Computing validation loss per epoch
 		val_loss=0
 		val_acc=0
-		test_datagen=listgen.flow(test_imglist,shuffle=False,img_size=img_size,batch_size=128)
 		
 		test_count_iter=0
+		test_datagen=listgen.flow(test_imglist,shuffle=False,img_size=img_size,batch_size=128)
+		
 		for test_data,test_labels in test_datagen:
 			test_count_iter+=1
 			test_data=test_data[:]-mean_X
@@ -494,6 +494,12 @@ def batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val
 		val_loss=val_loss/test_count_iter
 		val_acc=val_acc/test_count_iter
 
-		per_epoch_performance_stats.append([epoch,train_loss,val_loss,train_acc,val_acc])
-		print ('Epoch %d Learning_Rate %0.04f Train (Val) %.03f (%.03f) Accuracy'%(epoch,np.array(plr()),train_acc,val_acc))
+		if train_bool:
+			if (val_acc>val_acc_old) and (epoch%1==0) and (save_file!=None):
+				print 'saving model...'
+				val_acc_old=val_acc
+				values=lasagne.layers.get_all_param_values(net['l_out'])
+				np.savez(save_file,values)		
+			per_epoch_performance_stats.append([epoch,train_loss,val_loss,train_acc,val_acc])
+		print ('************************ Val Accuracy: %.03f'%(val_acc))
 	return per_epoch_performance_stats
