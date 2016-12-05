@@ -18,6 +18,20 @@ import time
 import AM_Networks.helperfunctions as AH
 reload(AH)
 
+def generate_predictions(X,y,yhat,num=9):
+    ind=np.arange(len(y))
+    np.random.seed()
+    np.random.shuffle(ind)
+    py.figure()
+    for i in range(num):
+        img=X[ind[i],:,:,:].transpose(1,2,0)
+        true_label='Bad' if y[ind[i]]==0 else ('Good' if y[ind[i]]==1 else 'OK')
+        pred_label='Bad' if yhat[ind[i]]==0 else ('Good' if yhat[ind[i]]==1 else 'OK')
+        py.subplot(3,3,i+1)
+        py.imshow(img);py.axis('off')
+        py.title('%s(%s)'%(pred_label,true_label),fontsize=12,fontweight='bold')
+
+
 def parse_list(option, opt, value, parser):
   setattr(parser.values, option.dest, value.split(','))
 
@@ -158,10 +172,18 @@ if __name__=="__main__":
 
   ## Analyze:
   if opts.analyze:
-    layers=lasagne.layers.get_all_layers(net['l_out'])
-    input_var=layers[0].input_var
-    feat={};fval={}
-    for k in net:
-      feat[k]=lasagne.layers.get_output(net[k],deterministic=True)
-      fval[k]=theano.function([input_var],feat[k])
+    ## generate predictions:
+
+    datagen=AH.AM_Data_Generator(imglist,batch_size=100,img_size=crop_size)
+    X,y=next(datagen)
+    yhat=f_pred(X)
+    generate_predictions(X,y,yhat)
+
+
+    # layers=lasagne.layers.get_all_layers(net['l_out'])
+    # input_var=layers[0].input_var
+    # feat={};fval={}
+    # for k in net:
+    #   feat[k]=lasagne.layers.get_output(net[k],deterministic=True)
+    #   fval[k]=theano.function([input_var],feat[k])
 
