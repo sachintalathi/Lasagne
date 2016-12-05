@@ -43,6 +43,10 @@ if __name__=="__main__":
 
   (opts,args)=parser.parse_args()
   np.random.seed(100)
+
+  if opts.crop_size==None:
+    crop_size=(32,32)
+
   crop_size=map(int,opts.crop_size)
     ######## Define theano variables and theano functions for training/validation and testing#############
   X_sym=T.tensor4()
@@ -65,6 +69,7 @@ if __name__=="__main__":
 
   ### Load pretrained model
   if len(opts.model_file)!=0:
+    print 'Load pre-trained model...'
     [peps,values]=pickle.load(open(opts.model_file))
     lasagne.layers.set_all_param_values(net['l_out'],values)
     
@@ -117,6 +122,7 @@ if __name__=="__main__":
   f_pred=theano.function([X_sym],pred,allow_input_downcast=True)
 
   ## Get Data
+  print 'Load Data...'
   home_dir=os.environ['HOME']
   imglist=glob.glob('%s/Work/DataSets/AM_Project/Resized_256x256/*'%home_dir)
   np.random.shuffle(imglist)
@@ -125,11 +131,12 @@ if __name__=="__main__":
 
   #Begin Training
   if opts.train:
+    print 'Begin Training..'
     tic=time.clock()
     #peps=AH.batch_train(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,\
       #mini_batch_size=128,epochs=opts.epochs,cool_factor=10,data_augment_bool=opts.augment,img_size=crop_size)
     peps=AH.batch_train_with_ListImageGenerator(train_imglist,test_imglist,f_train,f_val,lr,cool_bool=opts.cool,img_size=crop_size,\
-      mini_batch_size=128,epochs=opts.epochs,cool_factor=10,shuffle=False)
+      mini_batch_size=opts.batch_size,epochs=opts.epochs,cool_factor=10,shuffle=False)
     toc=time.clock()
     print 'Training Time:', (toc-tic), 's'  
     if len(opts.save_dir)!=0:
